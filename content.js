@@ -1,0 +1,421 @@
+// Content script that runs on Lichess pages
+// Detects when a game ends and extracts game data
+// Also works on game review/analysis pages
+
+(function() {
+  'use strict';
+
+  let gameEndDetected = false;
+  let lastGameId = null;
+  let analysisButtonAdded = false;
+
+  // Function to extract game data from Lichess page
+  function extractGameData() {
+    try {
+      // Try to get PGN from the page (multiple selectors)
+      const pgnSelectors = [
+        '.pgn',
+        '.moves',
+        '[data-pgn]',
+        '.game-pgn',
+        'textarea.pgn',
+        'pre.pgn',
+        '.pgn-text',
+        '[class*="pgn"]'
+      ];
+      
+      for (const selector of pgnSelectors) {
+        const pgnElements = document.querySelectorAll(selector);
+        for (const pgnElement of pgnElements) {
+          const pgn = pgnElement.textContent || pgnElement.value || pgnElement.getAttribute('data-pgn');
+          if (pgn && pgn.trim().length > 10 && pgn.includes('1.')) {
+            return { pgn: pgn.trim(), source: 'pgn' };
+          }
+        }
+      }
+
+      // Try to get game ID from URL (multiple patterns)
+      const gameIdPatterns = [
+        /\/game\/([a-zA-Z0-9]{8})/,
+        /\/analysis\/([a-zA-Z0-9]{8})/,
+        /\/review\/([a-zA-Z0-9]{8})/,
+        /\/embed\/([a-zA-Z0-9]{8})/,
+        /\/([a-zA-Z0-9]{8})(?:\/|$)/  // Generic 8-char ID
+      ];
+
+      for (const pattern of gameIdPatterns) {
+        const match = window.location.pathname.match(pattern);
+        if (match && match[1]) {
+          return { gameId: match[1], source: 'api' };
+        }
+      }
+
+      // Try to get game ID from data attributes
+      const gameIdSelectors = [
+        '[data-game-id]',
+        '[data-live-game-id]',
+        '[data-id]',
+        '.game[data-id]'
+      ];
+
+      for (const selector of gameIdSelectors) {
+        const el = document.querySelector(selector);
+        if (el) {
+          const gameId = el.getAttribute('data-game-id') || 
+                        el.getAttribute('data-live-game-id') ||
+                        el.getAttribute('data-id');
+          if (gameId && gameId.length === 8) {
+            return { gameId, source: 'api' };
+          }
+        }
+      }
+
+      // Try to extract from Lichess's embedded data
+      const lichessData = window.lichess || window.Lichess;
+      if (lichessData && lichessData.data) {
+        if (lichessData.data.game && lichessData.data.game.id) {
+          return { gameId: lichessData.data.game.id, source: 'api' };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error extracting game data:', error);
+      return null;
+    }
+  }
+
+  // Function to check if we're on a game page (finished or review)
+  function isGamePage() {
+    // Check URL patterns for game pages
+    const gameUrlPatterns = [
+      /\/game\/[a-zA-Z0-9]{8}/,     // Game page: /game/abc12345
+      /\/[a-zA-Z0-9]{8}$/,           // Game ID in URL: /abc12345
+      /\/[a-zA-Z0-9]{8}\/black$/,    // Black's perspective
+      /\/[a-zA-Z0-9]{8}\/white$/,    // White's perspective
+      /\/analysis\/[a-zA-Z0-9]{8}/, // Analysis page
+      /\/review\/[a-zA-Z0-9]{8}/,   // Review page
+      /\/embed\/[a-zA-Z0-9]{8}/     // Embedded game
+    ];
+
+    const isGameURL = gameUrlPatterns.some(pattern => pattern.test(window.location.pathname));
+
+    // Check for game board or game-related elements
+    const gameElements = [
+      '.cg-wrap',
+      '.lichess_board_wrap',
+      '.round',
+      '.game',
+      '[data-live-game-id]',
+      '.moves',
+      '.pgn'
+    ];
+
+    const hasGameElements = gameElements.some(selector => document.querySelector(selector) !== null);
+
+    // Check for game end indicators (finished games)
+    const gameEndSelectors = [
+      '.game-result',
+      '.result',
+      '[data-result]',
+      '.status',
+      '.game-over',
+      '.result-wrap',
+      '.game-status',
+      '[class*="result"]',
+      '[class*="finished"]'
+    ];
+
+    const hasEnded = gameEndSelectors.some(selector => {
+      const el = document.querySelector(selector);
+      return el !== null && el.textContent.trim().length > 0;
+    });
+
+    return isGameURL || (hasGameElements && hasEnded);
+  }
+
+  // Function to get PGN from Lichess API
+  async function getPGNFromAPI(gameId) {
+    try {
+      // Try multiple API endpoints
+      const endpoints = [
+        `https://lichess.org/game/export/${gameId}?pgn=1`,
+        `https://lichess.org/game/export/${gameId}.pgn`,
+        `https://lichess.org/api/game/${gameId}?pgn=1`,
+        `https://lichess.org/api/game/${gameId}?literate=1&pgn=1`
+      ];
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            headers: {
+              'Accept': 'text/plain, application/x-chess-pgn'
+            }
+          });
+          if (response.ok) {
+            const pgn = await response.text();
+            if (pgn && pgn.trim().length > 10 && (pgn.includes('1.') || pgn.includes('[Event'))) {
+              return pgn.trim();
+            }
+          }
+        } catch (e) {
+          console.log('Failed endpoint:', endpoint, e);
+          continue;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching PGN from API:', error);
+    }
+    return null;
+  }
+
+  // Function to open analysis page
+  async function openAnalysisPage(gameData, force = false) {
+    // Allow forced analysis (for manual triggers)
+    if (!force && gameEndDetected) return;
+    gameEndDetected = true;
+
+    let pgn = null;
+
+    // Try to get PGN
+    if (gameData.pgn) {
+      pgn = gameData.pgn;
+    } else if (gameData.gameId) {
+      console.log('Fetching PGN for game:', gameData.gameId);
+      pgn = await getPGNFromAPI(gameData.gameId);
+    }
+
+    if (!pgn && gameData.moves) {
+      // Convert moves array to PGN format (simplified)
+      pgn = gameData.moves.join(' ');
+    }
+
+    if (!pgn) {
+      console.error('Could not extract game data');
+      alert('Could not extract game data. Make sure you are on a finished game page.');
+      return;
+    }
+
+    // Store game data and open analysis page
+    chrome.storage.local.set({ 
+      currentGamePGN: pgn,
+      gameUrl: window.location.href
+    }, () => {
+      chrome.runtime.sendMessage({ 
+        action: 'openAnalysis',
+        pgn: pgn
+      });
+    });
+  }
+
+  // Add analysis button to game pages
+  function addAnalysisButton() {
+    if (analysisButtonAdded) return;
+    
+    // Find a good place to add the button (near game controls)
+    const buttonContainers = [
+      '.round__actions',
+      '.game__actions',
+      '.analyse__tools',
+      '.moves',
+      '.underboard',
+      '.game-controls',
+      'header',
+      '.round__app'
+    ];
+
+    let container = null;
+    for (const selector of buttonContainers) {
+      container = document.querySelector(selector);
+      if (container) break;
+    }
+
+    // Fallback: create container at top of page
+    if (!container) {
+      container = document.body;
+    }
+
+    // Check if button already exists
+    if (document.getElementById('lichess-analyzer-btn')) {
+      analysisButtonAdded = true;
+      return;
+    }
+
+    // Single button that opens website
+    const analyzeBtn = document.createElement('button');
+    analyzeBtn.id = 'lichess-analyzer-btn';
+    analyzeBtn.innerHTML = '🔍 Analyze Game';
+    analyzeBtn.style.cssText = `
+      background: #1a4d3a;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      margin: 10px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: transform 0.2s;
+    `;
+    
+    analyzeBtn.addEventListener('mouseenter', () => {
+      analyzeBtn.style.transform = 'translateY(-2px)';
+      analyzeBtn.style.background = '#2a5d4a';
+    });
+    
+    analyzeBtn.addEventListener('mouseleave', () => {
+      analyzeBtn.style.transform = 'translateY(0)';
+      analyzeBtn.style.background = '#1a4d3a';
+    });
+
+    analyzeBtn.addEventListener('click', async () => {
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = 'Loading...';
+      
+      const gameData = extractGameData();
+      if (gameData) {
+        await openAnalysisPage(gameData, true);
+      } else {
+        alert('Could not find game data. Please make sure you are on a finished game page.');
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = '🔍 Analyze Game';
+      }
+    });
+
+    // Insert button
+    if (container === document.body) {
+      container.insertBefore(analyzeBtn, container.firstChild);
+    } else {
+      container.appendChild(analyzeBtn);
+    }
+
+    analysisButtonAdded = true;
+  }
+
+  // Monitor for game pages and add analysis button
+  function monitorGamePage() {
+    if (isGamePage()) {
+      // Add analysis button for manual analysis
+      setTimeout(() => {
+        addAnalysisButton();
+      }, 1000);
+
+      // Don't auto-analyze - only manual via button
+    }
+  }
+
+  // Check if game has ended
+  function checkGameEnded() {
+    // Check for game end indicators
+    const gameEndSelectors = [
+      '.game-result',
+      '.result',
+      '[data-result]',
+      '.status',
+      '.game-over',
+      '.result-wrap',
+      '.game-status',
+      '.round__result',
+      '.result',
+      '[class*="result"]',
+      '[class*="finished"]'
+    ];
+
+    const hasEnded = gameEndSelectors.some(selector => {
+      const el = document.querySelector(selector);
+      if (el) {
+        const text = el.textContent.trim().toLowerCase();
+        return text.length > 0 && (
+          text.includes('win') || 
+          text.includes('draw') || 
+          text.includes('resign') ||
+          text.includes('checkmate') ||
+          text.includes('time') ||
+          text.includes('1-0') ||
+          text.includes('0-1') ||
+          text.includes('½-½')
+        );
+      }
+      return false;
+    });
+
+    // Also check if we're on a finished game URL (not live)
+    const isFinishedURL = window.location.pathname.match(/\/[a-zA-Z0-9]{8}(?:\/black|\/white)?$/) &&
+                         !window.location.pathname.includes('/live/');
+
+    return hasEnded || isFinishedURL;
+  }
+
+  // Listen for messages from background script
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'analyzeCurrentGame') {
+      const gameData = extractGameData();
+      if (gameData) {
+        openAnalysisPage(gameData, true);
+        sendResponse({ success: true });
+      } else {
+        sendResponse({ success: false, error: 'No game data found' });
+      }
+    }
+    return true;
+  });
+
+  // Check periodically for game pages (more frequently)
+  setInterval(monitorGamePage, 1000);
+
+  // Also check on page load
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(monitorGamePage, 500);
+    });
+  } else {
+    setTimeout(monitorGamePage, 500);
+  }
+
+  // Watch for URL changes (SPA navigation)
+  let lastUrl = location.href;
+  const urlObserver = new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastUrl) {
+      lastUrl = url;
+      gameEndDetected = false; // Reset for new game
+      analysisButtonAdded = false; // Reset button flag
+      console.log('URL changed, monitoring game page...');
+      setTimeout(monitorGamePage, 500);
+    }
+  });
+  
+  urlObserver.observe(document, { subtree: true, childList: true });
+
+  // Watch for DOM changes (game end indicators appearing)
+  const domObserver = new MutationObserver(() => {
+    if (isGamePage()) {
+      if (!analysisButtonAdded) {
+        setTimeout(addAnalysisButton, 500);
+      }
+      // Check if game just ended
+      if (!gameEndDetected && checkGameEnded()) {
+        console.log('Game end detected via DOM change');
+        setTimeout(() => {
+          const gameData = extractGameData();
+          if (gameData) {
+            openAnalysisPage(gameData);
+          }
+        }, 1000);
+      }
+    }
+  });
+  
+  domObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'data-result']
+  });
+
+  // Initial check
+  console.log('Lichess Analyzer extension loaded');
+
+})();
+

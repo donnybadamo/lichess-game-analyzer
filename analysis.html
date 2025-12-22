@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Analysis - donnybadamo.com</title>
+  <link rel="stylesheet" href="analysis.css">
+  <!-- Chessboard.js CSS -->
+  <link rel="stylesheet" href="libs/chessboard.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Game Analysis</h1>
+        <div style="font-size: 12px; opacity: 0.7; margin-top: 5px;">donnybadamo.com</div>
+      </div>
+      <div class="controls">
+        <button id="playBtn" class="btn btn-primary">▶ Play</button>
+        <button id="pauseBtn" class="btn btn-secondary">⏸ Pause</button>
+        <button id="stopBtn" class="btn btn-secondary">⏹ Stop</button>
+        <button id="prevBtn" class="btn btn-secondary">◀ Previous</button>
+        <button id="nextBtn" class="btn btn-secondary">Next ▶</button>
+        <label class="voice-control">
+          <input type="checkbox" id="voiceToggle" checked> Voice
+        </label>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <div class="board-container">
+        <div id="board"></div>
+        <div class="board-info">
+          <div id="evaluation" class="evaluation-bar">
+            <div id="evalBar" class="eval-fill"></div>
+            <span id="evalText">+0.0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="moves-panel">
+        <h2>Moves</h2>
+        <div id="movesList" class="moves-list"></div>
+      </div>
+    </div>
+
+    <div class="analysis-info">
+      <div class="info-section">
+        <h3>Game Info</h3>
+        <div id="gameInfo"></div>
+      </div>
+      
+      <div class="info-section" id="pgnInputSection" style="display: block;">
+        <h3>Or Paste PGN</h3>
+        <div class="pgn-input-container">
+          <textarea id="pgnInput" placeholder="Paste your PGN here...&#10;&#10;Example:&#10;[Event &quot;Game&quot;]&#10;[White &quot;Player1&quot;]&#10;[Black &quot;Player2&quot;]&#10;&#10;1. e4 e5 2. Nf3 Nc6 3. Bb5..."></textarea>
+          <button id="analyzePgnBtn" class="btn btn-primary">Analyze PGN</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Libraries loaded via separate script file for CSP compliance -->
+  <script src="init.js"></script>
+</body>
+</html>
+
