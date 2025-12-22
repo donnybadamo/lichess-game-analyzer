@@ -111,6 +111,12 @@ loadScript('libs/jquery.min.js').then(() => {
   }
   console.log('✓ Chessboard verified:', typeof window.Chessboard);
   
+  // Load ElevenLabs TTS script
+  console.log('Loading ElevenLabs TTS...');
+  return loadScript('elevenlabs-tts.js');
+}).then(() => {
+  console.log('✓ ElevenLabs TTS loaded');
+  
   // Load analysis script after libraries
   console.log('Loading analysis.js...');
   return loadScript('analysis.js');

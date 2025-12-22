@@ -3,5 +3,12 @@ node_modules/
 .DS_Store
 *.zip
 
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+secrets.json
+*.key
+
 # Don't ignore piece files - they're needed for the extension!
 # libs/pieces/*.svg

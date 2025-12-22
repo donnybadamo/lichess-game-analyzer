@@ -1231,7 +1231,20 @@ async function speakMoveWithAnalysis(moveIndex) {
   // Skip if no text
   if (!text || text.trim().length === 0) return;
   
-  // Try Google TTS first (masculine, natural voice)
+  // Try ElevenLabs first (premium voice with agent)
+  if (typeof window.speakWithElevenLabs === 'function') {
+    try {
+      const success = await window.speakWithElevenLabs(text);
+      if (success) {
+        console.log('✓ Spoke with ElevenLabs (premium voice)');
+        return;
+      }
+    } catch (error) {
+      console.log('ElevenLabs failed, using fallback:', error);
+    }
+  }
+  
+  // Fallback to Google TTS
   if (useGoogleTTS) {
     const success = await speakWithGoogleTTS(text);
     if (success) {
@@ -1240,7 +1253,7 @@ async function speakMoveWithAnalysis(moveIndex) {
     }
   }
   
-  // Fallback to Web Speech API
+  // Final fallback to Web Speech API
   // Cancel any ongoing speech
   synth.cancel();
   
