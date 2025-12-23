@@ -1,23 +1,12 @@
 {
-  "name": "lichess-analyzer-extension",
+  "name": "lichess-game-analyzer",
   "version": "1.0.0",
-  "description": "Chrome extension to analyze Lichess games with chess.com-style annotations and voice narration",
+  "description": "Chrome extension for analyzing Lichess games",
   "scripts": {
-    "install": "node install.js",
-    "setup": "node install.js",
-    "test": "node test-pgn.js && node test-full.js",
-    "test:clean": "node test-pgn.js",
-    "test:full": "node test-full.js"
+    "build:cloudflare": "node cloudflare-pages-build.js",
+    "build": "npm run build:cloudflare"
   },
-  "keywords": [
-    "chess",
-    "lichess",
-    "chrome-extension",
-    "analysis"
-  ],
+  "keywords": ["lichess", "chess", "analysis", "chrome-extension"],
   "author": "",
-  "license": "MIT",
-  "optionalDependencies": {
-    "canvas": "^2.11.2"
-  }
+  "license": "MIT"
 }
