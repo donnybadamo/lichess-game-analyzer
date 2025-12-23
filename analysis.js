@@ -793,8 +793,18 @@ async function getPositionEvaluation(fen, moveIndex) {
         }
         
         if (pvMatch) {
-          pv = pvMatch[1].split(' ');
-          if (!bestMove) bestMove = pv[0];
+          // Split PV and filter out move numbers and game results
+          pv = pvMatch[1].split(' ').filter(move => {
+            // Filter out move numbers (e.g., "1.", "2.", "15.")
+            if (/^\d+\.?$/.test(move)) return false;
+            // Filter out game results
+            if (['1-0', '0-1', '1/2-1/2', '*'].includes(move)) return false;
+            return true;
+          });
+          // Get first valid move as best move
+          if (!bestMove && pv.length > 0) {
+            bestMove = pv[0];
+          }
         }
         
         // Stop when we have enough depth
@@ -914,7 +924,11 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
   
   // Positional commentary
   const fen = chessInstance.fen();
-  if (evaluation.bestMove && evaluation.bestMove !== move.san) {
+  if (evaluation.bestMove && 
+      typeof evaluation.bestMove === 'string' && 
+      evaluation.bestMove !== move.san &&
+      !/^\d+\.?$/.test(evaluation.bestMove) &&
+      !['1-0', '0-1', '1/2-1/2', '*'].includes(evaluation.bestMove)) {
     // Try to explain why the best move is better
     const bestMoveCommentary = explainBestMove(evaluation.bestMove, move.san, chessInstance);
     if (bestMoveCommentary) {
@@ -933,7 +947,28 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
 }
 
 function explainBestMove(bestMove, playedMove, chessInstance) {
-  // Simple explanation based on move patterns
+  // Validate bestMove
+  if (!bestMove || typeof bestMove !== 'string') {
+    return '';
+  }
+  
+  // Filter out move numbers and invalid moves
+  if (/^\d+\.?$/.test(bestMove) || ['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove)) {
+    return '';
+  }
+  
+  // Check if bestMove is a valid chess move format
+  // Valid moves contain letters (a-h) and numbers (1-8) or special notation
+  if (!/^[a-hO0-9+\-#=xPNBRQK]+/.test(bestMove)) {
+    return '';
+  }
+  
+  // If best move is same as played move, no commentary needed
+  if (bestMove === playedMove) {
+    return '';
+  }
+  
+  // Generate explanation based on move patterns
   if (bestMove.includes('x') && !playedMove.includes('x')) {
     return `The best move was to capture with ${bestMove}, creating a tactical opportunity. `;
   }

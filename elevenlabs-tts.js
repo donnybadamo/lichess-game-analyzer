@@ -1,10 +1,16 @@
-// ElevenLabs Text-to-Speech with Conversational AI Agent support
+/**
+ * ElevenLabs Text-to-Speech Integration
+ * Supports Conversational AI Agents and direct voice IDs
+ */
 
-// Cache for agent voice ID
+// Cache for agent voice ID to avoid repeated API calls
 let agentVoiceIdCache = null;
 let agentVoiceFetchPromise = null; // Prevent multiple simultaneous fetches
 
-// Pre-fetch agent voice ID when page loads
+/**
+ * Pre-fetch agent voice ID when page loads
+ * This improves performance by caching the voice ID early
+ */
 async function initializeAgentVoice() {
   try {
     const storage = await chrome.storage.local.get(['elevenlabsApiKey', 'elevenlabsAgentId']);
@@ -19,18 +25,23 @@ async function initializeAgentVoice() {
     console.log('🔍 Initializing agent voice for:', agentId);
     await fetchAgentVoiceId(apiKey, agentId);
   } catch (error) {
-    console.error('Error initializing agent voice:', error);
+    console.error('❌ Error initializing agent voice:', error);
   }
 }
 
-// Fetch agent voice ID
+/**
+ * Fetches the voice ID associated with an ElevenLabs Conversational AI Agent
+ * @param {string} apiKey - ElevenLabs API key
+ * @param {string} agentId - Agent ID
+ * @returns {Promise<string>} Voice ID
+ */
 async function fetchAgentVoiceId(apiKey, agentId) {
-  // Return cached if available
+  // Return cached value if available
   if (agentVoiceIdCache) {
     return agentVoiceIdCache;
   }
   
-  // Return existing promise if fetch is in progress
+  // Return existing promise if fetch is in progress (prevents duplicate requests)
   if (agentVoiceFetchPromise) {
     return agentVoiceFetchPromise;
   }
@@ -38,26 +49,70 @@ async function fetchAgentVoiceId(apiKey, agentId) {
   // Start fetch
   agentVoiceFetchPromise = (async () => {
     try {
-      // Try the correct endpoint for Conversational AI agents
-      const endpoint = `https://api.elevenlabs.io/v1/convai/agent/${agentId}`;
-      console.log('📡 Fetching agent from:', endpoint);
+      // Try multiple possible endpoints for Conversational AI agents
+      // Note: Requires API key with 'convai_read' permission
+      const endpoints = [
+        `https://api.elevenlabs.io/v1/convai/agents/${agentId}`,     // Plural "agents" (most common)
+        `https://api.elevenlabs.io/v1/convai/agent/${agentId}`,      // Singular "agent"
+        `https://api.elevenlabs.io/v1/convai/${agentId}`,            // Direct
+        `https://api.elevenlabs.io/v1/convai/conversations/${agentId}`, // Conversations endpoint
+      ];
       
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'xi-api-key': apiKey
+      let agentData = null;
+      let lastError = null;
+      
+      for (const endpoint of endpoints) {
+        try {
+          console.log('📡 Trying endpoint:', endpoint);
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'xi-api-key': apiKey
+            }
+          });
+          
+          if (response.ok) {
+            agentData = await response.json();
+            console.log('✅ Agent data received from:', endpoint);
+            break;
+          } else {
+            const errorText = await response.text();
+            let errorData = null;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch (e) {
+              errorData = { detail: errorText };
+            }
+            
+            // Check for missing permissions (401)
+            if (response.status === 401 && errorData.detail?.status === 'missing_permissions') {
+              console.warn('⚠️ API key missing convai_read permission - cannot fetch agent voice');
+              console.log('💡 Solution: Set elevenlabsVoiceId manually in Chrome storage');
+              throw new Error('MISSING_PERMISSIONS: API key lacks convai_read permission');
+            }
+            
+            console.log(`⚠️ Endpoint ${endpoint} failed:`, response.status, errorText);
+            lastError = { status: response.status, text: errorText };
+          }
+        } catch (err) {
+          console.log(`⚠️ Error with endpoint ${endpoint}:`, err.message);
+          lastError = err;
         }
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Agent API failed:', response.status, errorText);
-        throw new Error(`Agent API failed: ${response.status}`);
       }
       
-      const agentData = await response.json();
-      console.log('📦 Agent data received:', agentData);
+      if (!agentData) {
+        // Check if it's a permissions error
+        if (lastError?.text && lastError.text.includes('missing_permissions')) {
+          throw new Error('MISSING_PERMISSIONS: API key lacks convai_read permission');
+        }
+        
+        console.error('❌ All agent API endpoints failed');
+        if (lastError) {
+          throw new Error(`Agent API failed: ${lastError.status || 'Network error'} - ${lastError.text || lastError.message}`);
+        }
+        throw new Error('Agent API failed: All endpoints returned errors');
+      }
       
       // Try to find voice ID in various locations
       const voiceId = agentData.voice_id || 
@@ -94,42 +149,75 @@ async function fetchAgentVoiceId(apiKey, agentId) {
 async function speakWithElevenLabs(text) {
   try {
     const storage = await chrome.storage.local.get(['elevenlabsApiKey', 'elevenlabsAgentId', 'elevenlabsVoiceId']);
-    const apiKey = storage.elevenlabsApiKey;
+    let apiKey = storage.elevenlabsApiKey;
     const agentId = storage.elevenlabsAgentId;
     const voiceId = storage.elevenlabsVoiceId;
     
     if (!apiKey) {
-      console.log('ElevenLabs API key not set. Using fallback voice.');
+      console.error('❌ ElevenLabs API key not set!');
+      console.log('💡 Credentials should load automatically from Cloudflare Worker');
+      console.log('💡 Or set manually: chrome.storage.local.set({ elevenlabsApiKey: "sk_..." })');
+      console.log('💡 Make sure Cloudflare Worker URL is configured');
       return false;
     }
     
-    // Get agent's voice ID if agent is configured
-    let finalVoiceId = voiceId;
+    // Verify API key format
+    if (!apiKey.startsWith('sk_')) {
+      console.warn('⚠️ API key format looks incorrect (should start with "sk_")');
+    }
+    
+    // ONLY use agent API to fetch voice ID (no manual override)
+    let finalVoiceId = null;
     
     if (agentId) {
       console.log('🎙️ Using ElevenLabs Agent:', agentId);
+      console.log('🔍 Fetching agent voice ID from API...');
       
-      // Fetch agent voice ID if not cached
+      // Always fetch agent voice ID if not cached
       if (!agentVoiceIdCache) {
         try {
           await fetchAgentVoiceId(apiKey, agentId);
         } catch (error) {
-          console.error('⚠ Failed to fetch agent voice ID:', error);
+          if (error.message && error.message.includes('MISSING_PERMISSIONS')) {
+            console.error('❌ API key missing convai_read permission');
+            console.log('💡 SOLUTION: Enable convai_read permission on your API key');
+            console.log('   1. Go to: https://elevenlabs.io/app/settings/api-keys');
+            console.log('   2. Find your API key');
+            console.log('   3. Enable "Conversational AI Read" permission');
+            console.log('   4. Update the key in Cloudflare Worker secret: ELEVENLABS_API_KEY');
+            throw new Error('MISSING_PERMISSIONS: Enable convai_read on API key');
+          } else {
+            console.error('❌ Failed to fetch agent voice ID:', error.message);
+            console.log('💡 Check:');
+            console.log('   1. Agent ID is correct:', agentId);
+            console.log('   2. API key has convai_read permission');
+            console.log('   3. Agent exists in your ElevenLabs account');
+            throw error;
+          }
         }
       }
       
-      // Use agent's voice ID, fallback to configured voice, then default
-      finalVoiceId = agentVoiceIdCache || voiceId || 'pNInz6obpgDQGcFmaJgB';
-      
+      // Use agent's voice ID (required - no fallback)
       if (agentVoiceIdCache) {
-        console.log('🎤 Using agent voice ID:', finalVoiceId);
+        finalVoiceId = agentVoiceIdCache;
+        console.log('✅ Using agent voice ID:', finalVoiceId);
       } else {
-        console.warn('⚠️ Using fallback voice ID:', finalVoiceId, '(agent voice not found)');
+        console.error('❌ Agent voice ID not found');
+        throw new Error('Agent voice ID not available');
       }
     } else {
-      finalVoiceId = voiceId || 'pNInz6obpgDQGcFmaJgB';
-      console.log('Speaking with ElevenLabs voice:', finalVoiceId);
+      console.error('❌ No agent ID configured');
+      console.log('💡 Set agent ID in Cloudflare Worker secret: ELEVENLABS_AGENT_ID');
+      throw new Error('Agent ID required');
     }
+    
+    // Final fallback
+    if (!finalVoiceId) {
+      finalVoiceId = 'pNInz6obpgDQGcFmaJgB';
+      console.warn('⚠️ Using default fallback voice ID:', finalVoiceId);
+    }
+    
+    console.log('🎯 FINAL VOICE ID BEING USED:', finalVoiceId);
     
     // Use ElevenLabs TTS endpoint with smooth jazz announcer settings
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`, {

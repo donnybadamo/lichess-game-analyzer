@@ -1,0 +1,26 @@
+# Cloudflare Workers configuration
+# For Key Vault proxy worker
+
+name = "lichess-secrets-proxy"
+main = "cloudflare-worker-keyvault.js"
+compatibility_date = "2024-12-01"
+compatibility_flags = []
+
+# This is a Worker, not Pages (no assets directory)
+# Workers are single JavaScript files
+
+[env.production]
+vars = { }
+
+# Secrets (set via: wrangler secret put KEY_NAME)
+# Required secrets:
+# - KEY_VAULT_URL
+# - AZURE_TENANT_ID
+# - AZURE_CLIENT_ID
+# - AZURE_CLIENT_SECRET
+
+# Routes (optional - for custom domain)
+# routes = [
+#   { pattern = "keyvault.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+

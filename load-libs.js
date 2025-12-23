@@ -111,16 +111,17 @@ loadScript('libs/jquery.min.js').then(() => {
   }
   console.log('✓ Chessboard verified:', typeof window.Chessboard);
   
-  // Load Azure Key Vault integration first
-  console.log('Loading Azure Key Vault...');
-  return loadScript('azure-keyvault.js');
+  // Load Cloudflare secrets integration
+  console.log('Loading Cloudflare secrets integration...');
+  return loadScript('cloudflare-secrets.js');
 }).then(() => {
-  console.log('✓ Azure Key Vault loaded');
+  console.log('✓ Cloudflare secrets integration loaded');
   
-  // Try to load credentials from Key Vault (non-blocking)
-  if (typeof window.loadElevenLabsFromKeyVault === 'function') {
-    window.loadElevenLabsFromKeyVault().catch(err => {
-      console.log('Key Vault not configured or unavailable:', err.message);
+  // Load credentials from Cloudflare Worker (non-blocking)
+  if (typeof window.loadElevenLabsCredentials === 'function') {
+    window.loadElevenLabsCredentials().catch(err => {
+      console.warn('⚠️ Cloudflare Worker not configured or unavailable:', err.message);
+      console.log('💡 Extension will work with manually set credentials in Chrome storage');
     });
   }
   
