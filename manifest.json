@@ -13,6 +13,7 @@
     "https://lichess1.org/*",
     "https://texttospeech.googleapis.com/*",
     "https://api.elevenlabs.io/*",
+    "https://*.azurewebsites.net/*",
     "https://cdn.jsdelivr.net/*",
     "https://unpkg.com/*"
   ],
@@ -41,12 +42,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "libs/*", "libs/pieces/*"],
+      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "azure-keyvault.js", "libs/*", "libs/pieces/*"],
       "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self' https://api.elevenlabs.io https://texttospeech.googleapis.com"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self' https://api.elevenlabs.io https://texttospeech.googleapis.com https://*.azurewebsites.net"
   }
 }
 

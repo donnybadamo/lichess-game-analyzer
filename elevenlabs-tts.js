@@ -2,6 +2,94 @@
 
 // Cache for agent voice ID
 let agentVoiceIdCache = null;
+let agentVoiceFetchPromise = null; // Prevent multiple simultaneous fetches
+
+// Pre-fetch agent voice ID when page loads
+async function initializeAgentVoice() {
+  try {
+    const storage = await chrome.storage.local.get(['elevenlabsApiKey', 'elevenlabsAgentId']);
+    const apiKey = storage.elevenlabsApiKey;
+    const agentId = storage.elevenlabsAgentId;
+    
+    if (!apiKey || !agentId) {
+      console.log('⚠️ Agent voice initialization skipped - missing credentials');
+      return;
+    }
+    
+    console.log('🔍 Initializing agent voice for:', agentId);
+    await fetchAgentVoiceId(apiKey, agentId);
+  } catch (error) {
+    console.error('Error initializing agent voice:', error);
+  }
+}
+
+// Fetch agent voice ID
+async function fetchAgentVoiceId(apiKey, agentId) {
+  // Return cached if available
+  if (agentVoiceIdCache) {
+    return agentVoiceIdCache;
+  }
+  
+  // Return existing promise if fetch is in progress
+  if (agentVoiceFetchPromise) {
+    return agentVoiceFetchPromise;
+  }
+  
+  // Start fetch
+  agentVoiceFetchPromise = (async () => {
+    try {
+      // Try the correct endpoint for Conversational AI agents
+      const endpoint = `https://api.elevenlabs.io/v1/convai/agent/${agentId}`;
+      console.log('📡 Fetching agent from:', endpoint);
+      
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'xi-api-key': apiKey
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Agent API failed:', response.status, errorText);
+        throw new Error(`Agent API failed: ${response.status}`);
+      }
+      
+      const agentData = await response.json();
+      console.log('📦 Agent data received:', agentData);
+      
+      // Try to find voice ID in various locations
+      const voiceId = agentData.voice_id || 
+                     agentData.voice?.voice_id ||
+                     agentData.voice?.id ||
+                     agentData.agent?.voice_id ||
+                     agentData.agent?.voice?.voice_id ||
+                     agentData.config?.voice_id ||
+                     agentData.config?.voice?.voice_id ||
+                     agentData.voiceId ||
+                     agentData.voice_settings?.voice_id;
+      
+      if (voiceId) {
+        agentVoiceIdCache = voiceId;
+        console.log('✅ Agent voice ID found:', voiceId);
+        return voiceId;
+      } else {
+        console.error('❌ Voice ID not found in agent data');
+        console.log('Full agent structure:', JSON.stringify(agentData, null, 2));
+        console.log('Available keys:', Object.keys(agentData));
+        throw new Error('Voice ID not found in agent data');
+      }
+    } catch (error) {
+      console.error('❌ Error fetching agent voice:', error);
+      throw error;
+    } finally {
+      agentVoiceFetchPromise = null;
+    }
+  })();
+  
+  return agentVoiceFetchPromise;
+}
 
 async function speakWithElevenLabs(text) {
   try {
@@ -19,45 +107,25 @@ async function speakWithElevenLabs(text) {
     let finalVoiceId = voiceId;
     
     if (agentId) {
-      console.log('Using ElevenLabs Agent:', agentId);
+      console.log('🎙️ Using ElevenLabs Agent:', agentId);
       
-      // Fetch agent details to get its voice ID
+      // Fetch agent voice ID if not cached
       if (!agentVoiceIdCache) {
         try {
-          const agentResponse = await fetch(`https://api.elevenlabs.io/v1/convai/agent/${agentId}`, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-              'xi-api-key': apiKey
-            }
-          });
-          
-          if (agentResponse.ok) {
-            const agentData = await agentResponse.json();
-            // Try different possible locations for voice ID
-            agentVoiceIdCache = agentData.voice_id || 
-                               agentData.voice?.voice_id || 
-                               agentData.voice_id ||
-                               agentData.agent?.voice_id ||
-                               agentData.config?.voice_id;
-            
-            if (agentVoiceIdCache) {
-              console.log('✓ Found agent voice ID:', agentVoiceIdCache);
-            } else {
-              console.log('⚠ Agent voice ID not found in response, using configured voice');
-              console.log('Agent data structure:', Object.keys(agentData));
-            }
-          } else {
-            const errorText = await agentResponse.text();
-            console.log('⚠ Could not fetch agent details:', agentResponse.status, errorText);
-          }
+          await fetchAgentVoiceId(apiKey, agentId);
         } catch (error) {
-          console.log('⚠ Error fetching agent details:', error.message);
+          console.error('⚠ Failed to fetch agent voice ID:', error);
         }
       }
       
+      // Use agent's voice ID, fallback to configured voice, then default
       finalVoiceId = agentVoiceIdCache || voiceId || 'pNInz6obpgDQGcFmaJgB';
-      console.log('Speaking with Agent voice ID:', finalVoiceId);
+      
+      if (agentVoiceIdCache) {
+        console.log('🎤 Using agent voice ID:', finalVoiceId);
+      } else {
+        console.warn('⚠️ Using fallback voice ID:', finalVoiceId, '(agent voice not found)');
+      }
     } else {
       finalVoiceId = voiceId || 'pNInz6obpgDQGcFmaJgB';
       console.log('Speaking with ElevenLabs voice:', finalVoiceId);
@@ -115,6 +183,13 @@ async function speakWithElevenLabs(text) {
   }
 }
 
-// Make function globally available
+// Make functions globally available
 window.speakWithElevenLabs = speakWithElevenLabs;
+window.initializeAgentVoice = initializeAgentVoice;
+window.fetchAgentVoiceId = fetchAgentVoiceId;
+
+// Initialize agent voice when script loads
+if (typeof chrome !== 'undefined' && chrome.storage) {
+  initializeAgentVoice();
+}
 

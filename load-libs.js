@@ -111,11 +111,31 @@ loadScript('libs/jquery.min.js').then(() => {
   }
   console.log('✓ Chessboard verified:', typeof window.Chessboard);
   
+  // Load Azure Key Vault integration first
+  console.log('Loading Azure Key Vault...');
+  return loadScript('azure-keyvault.js');
+}).then(() => {
+  console.log('✓ Azure Key Vault loaded');
+  
+  // Try to load credentials from Key Vault (non-blocking)
+  if (typeof window.loadElevenLabsFromKeyVault === 'function') {
+    window.loadElevenLabsFromKeyVault().catch(err => {
+      console.log('Key Vault not configured or unavailable:', err.message);
+    });
+  }
+  
   // Load ElevenLabs TTS script
   console.log('Loading ElevenLabs TTS...');
   return loadScript('elevenlabs-tts.js');
 }).then(() => {
   console.log('✓ ElevenLabs TTS loaded');
+  
+  // Initialize agent voice after a short delay to ensure storage is ready
+  setTimeout(() => {
+    if (typeof window.initializeAgentVoice === 'function') {
+      window.initializeAgentVoice();
+    }
+  }, 500);
   
   // Load analysis script after libraries
   console.log('Loading analysis.js...');
