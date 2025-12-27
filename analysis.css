@@ -753,9 +753,16 @@ body {
 
 .modal-content h2 {
   color: var(--foreground);
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   font-size: 18px;
-  }
+}
+
+.modal-hint {
+  color: var(--foreground);
+  opacity: 0.7;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
   
   #pgnInput {
     width: 100%;
@@ -945,5 +952,7 @@ body {
     width: 100px;
   }
 }
+
+
 
 

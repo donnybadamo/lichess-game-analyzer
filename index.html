@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#324639">
+  <title>Chess Analysis - donnybadamo.com</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♟️</text></svg>">
+  <link rel="stylesheet" href="analysis.css">
+  <link rel="stylesheet" href="libs/chessboard.css">
+  
+  <!-- Load jQuery first -->
+  <script src="libs/jquery.min.js"></script>
+</head>
+<body>
+  <!-- Site Header -->
+  <header class="site-header">
+    <a href="https://donnybadamo.com" target="_blank" class="site-brand">
+      <span class="shamrock">☘️</span>
+      <span class="brand-name">donnybadamo.com</span>
+    </a>
+    <h1 class="page-title">Chess Analysis</h1>
+    <div class="header-spacer"></div>
+  </header>
+
+  <main class="page-wrapper">
+    <div class="review-container">
+      <!-- Left: Board Section -->
+      <div class="board-section">
+      <div class="player-bar player-top" id="playerBlack">
+        <span class="player-name">Black</span>
+        <span class="player-rating"></span>
+      </div>
+      
+      <div class="board-with-eval">
+        <div class="eval-bar" id="evaluation">
+          <div class="eval-fill" id="evalBar"></div>
+          <span class="eval-text" id="evalText">0.0</span>
+          <span class="sf-badge" id="sfBadge" title="Stockfish 16">SF</span>
+        </div>
+        <div class="board-area">
+          <div id="board"></div>
+          <svg id="moveArrows" class="move-arrows"></svg>
+        </div>
+      </div>
+      
+      <div class="player-bar player-bottom" id="playerWhite">
+        <span class="player-name">White</span>
+        <span class="player-rating"></span>
+      </div>
+      
+      <div class="nav-controls">
+        <button id="stopBtn" class="nav-btn" title="Reset">⏮</button>
+        <button id="prevBtn" class="nav-btn" title="Previous">◀</button>
+        <button id="playBtn" class="nav-btn play-btn" title="Play">▶</button>
+        <button id="nextBtn" class="nav-btn" title="Next">▶</button>
+        <button id="pauseBtn" class="nav-btn" title="Last" style="display:none;">⏸</button>
+        <button id="endBtn" class="nav-btn" title="End">⏭</button>
+        <button id="flipBtn" class="nav-btn" title="Flip Board">🔄</button>
+        <label class="voice-toggle">
+          <input type="checkbox" id="voiceToggle" checked>
+          <span>🔊</span>
+        </label>
+      </div>
+    </div>
+    
+    <!-- Right: Analysis Panel -->
+    <div class="analysis-panel">
+      
+      <!-- Current Move Analysis -->
+      <div class="move-analysis" id="moveAnalysis">
+        <div class="analysis-content">
+          <div class="analysis-icon" id="analysisIcon">📊</div>
+          <div class="analysis-details">
+            <div class="analysis-move" id="analysisMove">Ready to analyze</div>
+            <div class="analysis-text" id="analysisText">Paste a PGN to begin analysis</div>
+          </div>
+          <div class="analysis-eval" id="analysisEval"></div>
+        </div>
+        <div class="best-move-hint" id="bestMoveHint" style="display: none;">
+          <span class="hint-label">Better was:</span>
+          <span class="hint-move" id="hintMove"></span>
+        </div>
+      </div>
+      
+      <!-- Key Moments -->
+      <div class="key-moments-section" id="keyMomentsSection">
+        <h3>⚡ Key Moments</h3>
+        <div class="key-moments-scroll" id="keyMomentsList">
+          <div class="moments-placeholder">Paste a PGN to analyze</div>
+        </div>
+      </div>
+      
+      <!-- Compact Move List -->
+      <div class="moves-section">
+        <h3>Moves</h3>
+        <div class="moves-grid" id="movesList"></div>
+      </div>
+      
+      <!-- Eval Graph -->
+      <div class="eval-graph-section">
+        <canvas id="evalGraph" height="60"></canvas>
+      </div>
+      
+      <!-- Game Info Footer -->
+      <div class="game-meta" id="gameMeta"></div>
+    </div>
+  </div>
+  </main>
+  
+  <!-- PGN Input Modal -->
+  <div class="pgn-modal" id="pgnModal">
+    <div class="modal-content">
+      <h2>♟️ Paste Game PGN</h2>
+      <p class="modal-hint">Copy a PGN from Lichess, Chess.com, or any chess site</p>
+      <textarea id="pgnInput" placeholder="[Event &quot;Casual Game&quot;]
+[Site &quot;lichess.org&quot;]
+[Date &quot;2024.01.01&quot;]
+[White &quot;Player1&quot;]
+[Black &quot;Player2&quot;]
+[Result &quot;1-0&quot;]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 ..."></textarea>
+      <div class="modal-buttons">
+        <button id="analyzePgnBtn" class="btn-analyze">Analyze Game</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Load libraries and app -->
+  <script src="libs/chessboard.min.js"></script>
+  <script type="module">
+    // Load Chess.js ESM module
+    import { Chess } from './libs/chess-esm.js';
+    window.Chess = Chess;
+    console.log('✓ Chess.js loaded');
+    
+    // Verify all libraries
+    if (typeof window.$ === 'undefined') {
+      console.error('jQuery not loaded');
+    } else {
+      console.log('✓ jQuery loaded');
+    }
+    
+    if (typeof window.Chessboard === 'undefined') {
+      console.error('Chessboard not loaded');
+    } else {
+      console.log('✓ Chessboard loaded');
+    }
+    
+    // Load the main analysis script
+    const script = document.createElement('script');
+    script.src = 'analysis-web.js';
+    script.onerror = () => console.error('Failed to load analysis-web.js');
+    document.body.appendChild(script);
+  </script>
+</body>
+</html>
+
