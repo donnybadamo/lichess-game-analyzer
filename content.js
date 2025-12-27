@@ -169,7 +169,7 @@
     return null;
   }
 
-  // Function to open analysis page
+  // Function to open analysis page as overlay
   async function openAnalysisPage(gameData, force = false) {
     // Allow forced analysis (for manual triggers)
     if (!force && gameEndDetected) return;
@@ -196,17 +196,122 @@
       return;
     }
 
-    // Store game data and open analysis page
+    // Store game data
     chrome.storage.local.set({ 
       currentGamePGN: pgn,
       gameUrl: window.location.href
     }, () => {
-      chrome.runtime.sendMessage({ 
-        action: 'openAnalysis',
-        pgn: pgn
-      });
+      // Show as overlay popup instead of new tab
+      showAnalysisOverlay(pgn);
     });
   }
+
+  // Create and show the analysis overlay
+  function showAnalysisOverlay(pgn) {
+    // Remove existing overlay if present
+    const existingOverlay = document.getElementById('lichess-analyzer-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    // Create overlay container
+    const overlay = document.createElement('div');
+    overlay.id = 'lichess-analyzer-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 999999;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(4px);
+    `;
+
+    // Create close button
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = '✕';
+    closeBtn.style.cssText = `
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 40px;
+      height: 40px;
+      background: #e67a28;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 20px;
+      cursor: pointer;
+      z-index: 1000001;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s, background 0.2s;
+    `;
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.transform = 'scale(1.1)';
+      closeBtn.style.background = '#ff8c3a';
+    });
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.transform = 'scale(1)';
+      closeBtn.style.background = '#e67a28';
+    });
+    closeBtn.addEventListener('click', () => {
+      overlay.remove();
+      gameEndDetected = false; // Allow re-opening
+    });
+
+    // Create iframe to load analysis page
+    const iframe = document.createElement('iframe');
+    const analysisUrl = chrome.runtime.getURL('analysis.html') + `?pgn=${encodeURIComponent(pgn)}`;
+    iframe.src = analysisUrl;
+    iframe.style.cssText = `
+      width: 95%;
+      height: 92%;
+      max-width: 1200px;
+      max-height: 800px;
+      border: none;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+
+    overlay.appendChild(closeBtn);
+    overlay.appendChild(iframe);
+
+    // Close on escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        gameEndDetected = false;
+        document.removeEventListener('keydown', handleEscape);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    // Close on overlay background click
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+        gameEndDetected = false;
+      }
+    });
+
+    document.body.appendChild(overlay);
+  }
+
+  // Function to close overlay (for external calls)
+  window.closeAnalysisOverlay = function() {
+    const overlay = document.getElementById('lichess-analyzer-overlay');
+    if (overlay) {
+      overlay.remove();
+      gameEndDetected = false;
+    }
+  };
 
   // Add analysis button to game pages
   function addAnalysisButton() {
@@ -236,58 +341,117 @@
     }
 
     // Check if button already exists
-    if (document.getElementById('lichess-analyzer-btn')) {
+    if (document.getElementById('lichess-analyzer-btns') || document.getElementById('lichess-analyzer-btn')) {
       analysisButtonAdded = true;
       return;
     }
 
-    // Single button that opens website
+    // Button container for both buttons
+    const btnContainer = document.createElement('div');
+    btnContainer.id = 'lichess-analyzer-btns';
+    btnContainer.style.cssText = `
+      display: flex;
+      gap: 8px;
+      margin: 10px;
+      align-items: center;
+    `;
+
+    // Main analyze button (overlay)
     const analyzeBtn = document.createElement('button');
     analyzeBtn.id = 'lichess-analyzer-btn';
-    analyzeBtn.innerHTML = '🔍 Analyze Game';
+    analyzeBtn.innerHTML = '☘️ Analyze';
+    analyzeBtn.title = 'Open analysis overlay (ESC to close)';
     analyzeBtn.style.cssText = `
-      background: #1a4d3a;
-      color: white;
+      background: linear-gradient(135deg, #324639 0%, #1a4d3a 100%);
+      color: #f0e6d6;
       border: none;
-      padding: 10px 20px;
+      padding: 10px 18px;
       border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
       font-weight: 600;
-      margin: 10px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      transition: transform 0.2s;
+      transition: transform 0.2s, box-shadow 0.2s;
     `;
     
     analyzeBtn.addEventListener('mouseenter', () => {
       analyzeBtn.style.transform = 'translateY(-2px)';
-      analyzeBtn.style.background = '#2a5d4a';
+      analyzeBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
     });
     
     analyzeBtn.addEventListener('mouseleave', () => {
       analyzeBtn.style.transform = 'translateY(0)';
-      analyzeBtn.style.background = '#1a4d3a';
+      analyzeBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.2)';
     });
 
     analyzeBtn.addEventListener('click', async () => {
       analyzeBtn.disabled = true;
-      analyzeBtn.textContent = 'Loading...';
+      analyzeBtn.textContent = '⏳ Loading...';
       
       const gameData = extractGameData();
       if (gameData) {
         await openAnalysisPage(gameData, true);
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = '☘️ Analyze';
       } else {
         alert('Could not find game data. Please make sure you are on a finished game page.');
         analyzeBtn.disabled = false;
-        analyzeBtn.textContent = '🔍 Analyze Game';
+        analyzeBtn.innerHTML = '☘️ Analyze';
       }
     });
 
-    // Insert button
+    // New tab button (smaller, secondary)
+    const newTabBtn = document.createElement('button');
+    newTabBtn.innerHTML = '↗';
+    newTabBtn.title = 'Open in new tab';
+    newTabBtn.style.cssText = `
+      background: #425249;
+      color: #f0e6d6;
+      border: none;
+      padding: 10px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: transform 0.2s, background 0.2s;
+    `;
+    
+    newTabBtn.addEventListener('mouseenter', () => {
+      newTabBtn.style.transform = 'translateY(-2px)';
+      newTabBtn.style.background = '#4a6252';
+    });
+    
+    newTabBtn.addEventListener('mouseleave', () => {
+      newTabBtn.style.transform = 'translateY(0)';
+      newTabBtn.style.background = '#425249';
+    });
+
+    newTabBtn.addEventListener('click', async () => {
+      newTabBtn.disabled = true;
+      
+      const gameData = extractGameData();
+      if (gameData) {
+        let pgn = gameData.pgn;
+        if (!pgn && gameData.gameId) {
+          pgn = await getPGNFromAPI(gameData.gameId);
+        }
+        if (pgn) {
+          chrome.storage.local.set({ currentGamePGN: pgn, gameUrl: window.location.href }, () => {
+            chrome.runtime.sendMessage({ action: 'openAnalysis', pgn: pgn });
+          });
+        }
+      }
+      newTabBtn.disabled = false;
+    });
+
+    btnContainer.appendChild(analyzeBtn);
+    btnContainer.appendChild(newTabBtn);
+
+    // Insert button container
     if (container === document.body) {
-      container.insertBefore(analyzeBtn, container.firstChild);
+      container.insertBefore(btnContainer, container.firstChild);
     } else {
-      container.appendChild(analyzeBtn);
+      container.appendChild(btnContainer);
     }
 
     analysisButtonAdded = true;

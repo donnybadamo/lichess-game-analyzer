@@ -7,6 +7,7 @@ let moves = [];
 let currentMoveIndex = -1;
 let analysisData = [];
 let moveCommentary = []; // Store commentary for each move
+let keyMoments = []; // Store key turning points
 let gameSummary = null;
 let isPlaying = false;
 let playInterval = null;
@@ -15,6 +16,129 @@ let synth = window.speechSynthesis;
 let selectedVoice = null;
 let useGoogleTTS = false;
 let googleTTSApiKey = null;
+let boardOrientation = 'white'; // 'white' or 'black'
+let isExploringLine = false; // Track if user is exploring alternate moves
+
+// Board drag/drop handlers
+function onDragStart(source, piece, position, orientation) {
+  // Don't allow picking up pieces if game is over
+  if (chess.isGameOver()) return false;
+  
+  // Only allow moving pieces of the current turn
+  if ((chess.turn() === 'w' && piece.search(/^b/) !== -1) ||
+      (chess.turn() === 'b' && piece.search(/^w/) !== -1)) {
+    return false;
+  }
+  
+  return true;
+}
+
+function onDrop(source, target) {
+  // Check if this is a legal move
+  const move = chess.move({
+    from: source,
+    to: target,
+    promotion: 'q' // Always promote to queen for simplicity
+  });
+  
+  // Illegal move
+  if (move === null) return 'snapback';
+  
+  // Mark that we're exploring a line
+  if (!isExploringLine) {
+    isExploringLine = true;
+    showExplorationIndicator();
+  }
+  
+  // Update the analysis display for the new position
+  updateExplorationAnalysis();
+  
+  return undefined; // Let the move happen
+}
+
+function onSnapEnd() {
+  // Update board position after the piece snap animation
+  board.position(chess.fen());
+}
+
+function showExplorationIndicator() {
+  const analysisMove = document.getElementById('analysisMove');
+  if (analysisMove) {
+    analysisMove.innerHTML = '🔍 <span style="color: var(--brilliant);">Exploring alternate line</span>';
+  }
+  
+  // Show a "Back to Game" button
+  const hintEl = document.getElementById('bestMoveHint');
+  if (hintEl) {
+    hintEl.style.display = 'block';
+    hintEl.innerHTML = `
+      <button id="backToGameBtn" class="back-to-game-btn" onclick="returnToGame()">
+        ↩ Back to Game Position
+      </button>
+    `;
+  }
+}
+
+function returnToGame() {
+  isExploringLine = false;
+  
+  // Reset to the current move in the game
+  goToMove(currentMoveIndex);
+  
+  // Hide the back button
+  const hintEl = document.getElementById('bestMoveHint');
+  if (hintEl) {
+    hintEl.style.display = 'none';
+    hintEl.innerHTML = `
+      <span class="hint-label">Better was:</span>
+      <span class="hint-move" id="hintMove"></span>
+    `;
+  }
+}
+
+async function updateExplorationAnalysis() {
+  if (!stockfish) return;
+  
+  const fen = chess.fen();
+  
+  // Quick analysis of the explored position
+  const analysisText = document.getElementById('analysisText');
+  if (analysisText) {
+    analysisText.textContent = 'Analyzing position...';
+  }
+  
+  try {
+    const evalResult = await getPositionEvaluation(fen, -1);
+    const cp = evalResult.cp || 0;
+    
+    // Update eval bar
+    updateEvaluation(cp, true);
+    
+    // Update analysis text
+    if (analysisText) {
+      const evalDisplay = (cp / 100).toFixed(2);
+      const sign = cp > 0 ? '+' : '';
+      const advantage = cp > 50 ? 'White is better' : cp < -50 ? 'Black is better' : 'Position is equal';
+      analysisText.textContent = `Eval: ${sign}${evalDisplay} • ${advantage}`;
+      
+      if (evalResult.bestMove) {
+        analysisText.textContent += ` • Best: ${evalResult.bestMove}`;
+      }
+    }
+    
+    // Draw best move arrow
+    clearMoveHighlights();
+    if (evalResult.bestMove && evalResult.bestMove.length >= 4) {
+      drawBestMoveArrow(evalResult.bestMove, '');
+    }
+    
+  } catch (e) {
+    console.error('Error analyzing explored position:', e);
+  }
+}
+
+// Make returnToGame available globally
+window.returnToGame = returnToGame;
 
 // Wait for libraries to be loaded before initializing
 function waitForLibraries() {
@@ -50,10 +174,10 @@ function showError(message) {
     gameInfo.appendChild(errorDiv);
   }
   
-  // Show PGN input section
-  const pgnInputSection = document.getElementById('pgnInputSection');
-  if (pgnInputSection) {
-    pgnInputSection.style.display = 'block';
+  // Show PGN modal
+  const pgnModal = document.getElementById('pgnModal');
+  if (pgnModal) {
+    pgnModal.style.display = 'flex';
   }
 }
 
@@ -161,17 +285,17 @@ async function initializeAnalysisPage() {
         if (result.currentGamePGN) {
           console.log('Got PGN from storage');
           await initializeGame(result.currentGamePGN);
-          // Hide PGN input section after successful analysis
-          const pgnInputSection = document.getElementById('pgnInputSection');
-          if (pgnInputSection) {
-            pgnInputSection.style.display = 'none';
+          // Hide PGN modal after successful analysis
+          const pgnModal = document.getElementById('pgnModal');
+          if (pgnModal) {
+            pgnModal.style.display = 'none';
           }
         } else {
-          // Show PGN input section instead of error
-          const pgnInputSection = document.getElementById('pgnInputSection');
-          if (pgnInputSection) {
-            pgnInputSection.style.display = 'block';
-            console.log('Showing PGN input section (no PGN found)');
+          // Show PGN modal instead of error
+          const pgnModal = document.getElementById('pgnModal');
+          if (pgnModal) {
+            pgnModal.style.display = 'flex';
+            console.log('Showing PGN modal (no PGN found)');
           }
           console.log('No PGN found. You can paste PGN in the input field.');
         }
@@ -186,18 +310,17 @@ async function initializeAnalysisPage() {
     pgn = decodeURIComponent(pgn);
     await initializeGame(pgn);
     
-    // Hide PGN input section if we got PGN from URL
-    const pgnInputSection = document.getElementById('pgnInputSection');
-    if (pgnInputSection) {
-      pgnInputSection.style.display = 'none';
-      console.log('Hiding PGN input section (PGN from URL)');
+    // Hide PGN modal if we got PGN from URL
+    const pgnModal = document.getElementById('pgnModal');
+    if (pgnModal) {
+      pgnModal.style.display = 'none';
     }
   } else {
-    // Show PGN input section if no PGN provided
-    const pgnInputSection = document.getElementById('pgnInputSection');
-    if (pgnInputSection) {
-      pgnInputSection.style.display = 'block';
-      console.log('Showing PGN input section (no PGN in URL)');
+    // Show PGN modal if no PGN provided
+    const pgnModal = document.getElementById('pgnModal');
+    if (pgnModal) {
+      pgnModal.style.display = 'flex';
+      console.log('Showing PGN modal (no PGN in URL)');
     }
     
     // Don't show error - let user paste PGN instead
@@ -376,11 +499,14 @@ async function initializeGame(pgn) {
       
       board = window.Chessboard('board', {
         position: 'start',
-        draggable: false,
-        pieceTheme: pieceTheme
+        draggable: true,
+        pieceTheme: pieceTheme,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd
       });
       
-      console.log('Chessboard initialized with Cloudflare CDN pieces:', pieceTheme);
+      console.log('Chessboard initialized with drag enabled:', pieceTheme);
       
       // Force refresh and verify pieces load
       setTimeout(() => {
@@ -430,6 +556,21 @@ async function initializeGame(pgn) {
       // Force a refresh
       board.position('start');
       
+      // Add resize handler to keep board properly sized
+      let resizeTimeout;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+          if (board) {
+            board.resize();
+            // Redraw arrows after resize
+            if (currentMoveIndex >= 0 && moves[currentMoveIndex]) {
+              highlightMove(moves[currentMoveIndex]);
+            }
+          }
+        }, 150);
+      });
+      
     } catch (err) {
       console.error('Chessboard initialization error:', err);
       console.error('Error details:', {
@@ -474,6 +615,7 @@ function setupEventListeners() {
     const stopBtn = document.getElementById('stopBtn');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
+    const endBtn = document.getElementById('endBtn');
     const voiceToggle = document.getElementById('voiceToggle');
     
     if (playBtn) playBtn.addEventListener('click', playMoves);
@@ -481,23 +623,79 @@ function setupEventListeners() {
     if (stopBtn) stopBtn.addEventListener('click', stopMoves);
     if (prevBtn) prevBtn.addEventListener('click', previousMove);
     if (nextBtn) nextBtn.addEventListener('click', nextMove);
+    if (endBtn) endBtn.addEventListener('click', goToEnd);
+    
+    const flipBtn = document.getElementById('flipBtn');
+    if (flipBtn) flipBtn.addEventListener('click', flipBoard);
+    
+    // Keyboard navigation for moves
+    document.addEventListener('keydown', (e) => {
+      // Don't trigger if typing in an input/textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          previousMove();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          nextMove();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          stopMoves(); // Go to start
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          goToEnd(); // Go to end
+          break;
+        case ' ': // Spacebar
+          e.preventDefault();
+          if (isPlaying) {
+            pauseMoves();
+          } else {
+            playMoves();
+          }
+          break;
+        case 'f':
+        case 'F':
+          e.preventDefault();
+          flipBoard();
+          break;
+      }
+    });
+    
     if (voiceToggle) {
+      // Set initial state
+      voiceEnabled = voiceToggle.checked;
+      console.log('Voice toggle initial state:', voiceEnabled);
+      
       voiceToggle.addEventListener('change', (e) => {
         voiceEnabled = e.target.checked;
+        console.log('Voice toggled:', voiceEnabled);
       });
+    } else {
+      console.warn('Voice toggle element not found!');
     }
     
-    // PGN input handler
+    // PGN modal handler
     const analyzePgnBtn = document.getElementById('analyzePgnBtn');
     const pgnInput = document.getElementById('pgnInput');
-    const pgnInputSection = document.getElementById('pgnInputSection');
+    const pgnModal = document.getElementById('pgnModal');
+    const closePgnModal = document.getElementById('closePgnModal');
     
     console.log('PGN input elements:', {
       analyzePgnBtn: !!analyzePgnBtn,
       pgnInput: !!pgnInput,
-      pgnInputSection: !!pgnInputSection,
-      sectionDisplay: pgnInputSection ? window.getComputedStyle(pgnInputSection).display : 'N/A'
+      pgnModal: !!pgnModal
     });
+    
+    if (closePgnModal) {
+      closePgnModal.addEventListener('click', () => {
+        pgnModal.style.display = 'none';
+      });
+    }
     
     if (analyzePgnBtn && pgnInput) {
       console.log('Setting up PGN input handlers');
@@ -518,16 +716,17 @@ function setupEventListeners() {
           // Initialize with pasted PGN
           await initializeGame(pgn);
           
-          // Hide input section after successful analysis
-          if (pgnInputSection) {
-            pgnInputSection.style.display = 'none';
+          // Hide modal after successful analysis
+          if (pgnModal) {
+            pgnModal.style.display = 'none';
           }
         } catch (error) {
           console.error('Error analyzing PGN:', error);
           alert('Error analyzing PGN: ' + error.message);
-          analyzePgnBtn.disabled = false;
-          analyzePgnBtn.textContent = 'Analyze PGN';
         }
+        
+        analyzePgnBtn.disabled = false;
+        analyzePgnBtn.textContent = 'Analyze Game';
       });
       
       // Allow Enter+Ctrl/Cmd to submit
@@ -542,6 +741,12 @@ function setupEventListeners() {
   }, 200);
 }
 
+function goToEnd() {
+  if (moves.length > 0) {
+    goToMove(moves.length - 1);
+  }
+}
+
 function resetGameState() {
   // Reset all game state variables
   chess = null;
@@ -550,6 +755,7 @@ function resetGameState() {
   currentMoveIndex = -1;
   analysisData = [];
   moveCommentary = [];
+  keyMoments = [];
   gameSummary = null;
   isPlaying = false;
   
@@ -580,6 +786,7 @@ async function initializeStockfish() {
     try {
       // Load Stockfish as a Web Worker (use local file)
       const stockfishUrl = chrome.runtime.getURL('libs/stockfish.js');
+      console.log('🔧 Loading Stockfish from:', stockfishUrl);
       stockfish = new Worker(stockfishUrl);
       
       let ready = false;
@@ -588,13 +795,26 @@ async function initializeStockfish() {
         const message = event.data || event;
         
         if (typeof message === 'string') {
+          // Log Stockfish messages for debugging
+          if (message.includes('id name') || message.includes('uciok') || message.includes('readyok')) {
+            console.log('♟️ Stockfish:', message);
+          }
+          
           if (message.includes('uciok')) {
+            console.log('✅ Stockfish UCI ready');
             stockfish.postMessage('isready');
           } else if (message.includes('readyok') && !ready) {
             ready = true;
+            console.log('✅ Stockfish engine ready!');
+            updateAnalysisStatus('Stockfish ready');
             resolve();
           }
         }
+      };
+      
+      stockfish.onerror = (error) => {
+        console.error('❌ Stockfish worker error:', error);
+        updateAnalysisStatus('Engine error');
       };
       
       stockfish.postMessage('uci');
@@ -602,82 +822,101 @@ async function initializeStockfish() {
       // Timeout fallback
       setTimeout(() => {
         if (!ready) {
-          console.warn('Stockfish initialization timeout, continuing anyway');
+          console.warn('⚠️ Stockfish initialization timeout');
+          updateAnalysisStatus('Engine timeout - using fallback');
           resolve();
         }
       }, 5000);
     } catch (e) {
-      console.error('Could not initialize Stockfish:', e);
-      // Continue without Stockfish - analysis will be limited
+      console.error('❌ Could not initialize Stockfish:', e);
+      updateAnalysisStatus('Engine not available');
       resolve();
     }
   });
 }
 
+function updateAnalysisStatus(status) {
+  const analysisText = document.getElementById('analysisText');
+  if (analysisText) {
+    analysisText.textContent = status;
+  }
+  
+  // Update SF badge state
+  const sfBadge = document.getElementById('sfBadge');
+  if (sfBadge) {
+    if (status.includes('analyzing') || status.includes('Analyzing')) {
+      sfBadge.classList.add('active');
+    } else {
+      sfBadge.classList.remove('active');
+    }
+    
+    // Show/hide based on Stockfish availability
+    sfBadge.style.display = stockfish ? 'block' : 'none';
+  }
+}
+
 function displayMoves() {
   const movesList = document.getElementById('movesList');
+  if (!movesList) return;
   movesList.innerHTML = '';
 
-  for (let i = 0; i < moves.length; i++) {
-    const move = moves[i];
+  // Compact grid: move number | white move | black move
+  for (let i = 0; i < moves.length; i += 2) {
     const moveNumber = Math.floor(i / 2) + 1;
-    const isWhite = i % 2 === 0;
     
-    const moveItem = document.createElement('div');
-    moveItem.className = 'move-item';
-    moveItem.dataset.moveIndex = i;
+    // Move number
+    const numCell = document.createElement('div');
+    numCell.className = 'move-num';
+    numCell.textContent = `${moveNumber}.`;
+    movesList.appendChild(numCell);
     
-    // Container for move number, text, and annotation
-    const moveRow = document.createElement('div');
-    moveRow.style.display = 'flex';
-    moveRow.style.alignItems = 'center';
-    moveRow.style.gap = '10px';
-    moveRow.style.width = '100%';
+    // White's move
+    const whiteMove = moves[i];
+    const whiteCell = document.createElement('div');
+    whiteCell.className = 'move-cell white-move';
+    whiteCell.dataset.moveIndex = i;
+    whiteCell.id = `move-${i}`;
+    whiteCell.innerHTML = `<span class="piece-dot white-dot"></span><span class="move-san">${whiteMove.san}</span><span class="move-icon"></span>`;
+    whiteCell.addEventListener('click', () => goToMove(i));
+    movesList.appendChild(whiteCell);
     
-    const moveNumberSpan = document.createElement('span');
-    moveNumberSpan.className = 'move-number';
-    moveNumberSpan.textContent = isWhite ? `${moveNumber}.` : '';
-    
-    const moveTextSpan = document.createElement('span');
-    moveTextSpan.className = 'move-text';
-    moveTextSpan.textContent = move.san;
-    
-    const annotationSpan = document.createElement('span');
-    annotationSpan.className = 'move-annotation';
-    annotationSpan.id = `annotation-${i}`;
-    annotationSpan.style.marginLeft = 'auto';
-    
-    moveRow.appendChild(moveNumberSpan);
-    moveRow.appendChild(moveTextSpan);
-    moveRow.appendChild(annotationSpan);
-    
-    // Add commentary container
-    const commentaryDiv = document.createElement('div');
-    commentaryDiv.className = 'move-commentary';
-    commentaryDiv.id = `commentary-${i}`;
-    commentaryDiv.style.display = 'none';
-    
-    moveItem.appendChild(moveRow);
-    moveItem.appendChild(commentaryDiv);
-    
-    moveItem.addEventListener('click', () => {
-      goToMove(i);
-    });
-    
-    movesList.appendChild(moveItem);
+    // Black's move (if exists)
+    if (i + 1 < moves.length) {
+      const blackMove = moves[i + 1];
+      const blackCell = document.createElement('div');
+      blackCell.className = 'move-cell black-move';
+      blackCell.dataset.moveIndex = i + 1;
+      blackCell.id = `move-${i + 1}`;
+      blackCell.innerHTML = `<span class="piece-dot black-dot"></span><span class="move-san">${blackMove.san}</span><span class="move-icon"></span>`;
+      blackCell.addEventListener('click', () => goToMove(i + 1));
+      movesList.appendChild(blackCell);
+    } else {
+      // Empty cell for alignment
+      const emptyCell = document.createElement('div');
+      emptyCell.className = 'move-cell empty';
+      movesList.appendChild(emptyCell);
+    }
   }
 }
 
 async function analyzeGame() {
   if (!stockfish) {
-    console.log('Stockfish not available, skipping detailed analysis');
+    console.log('❌ Stockfish not available, skipping detailed analysis');
+    updateAnalysisStatus('Stockfish engine not loaded - analysis unavailable');
     // Still show basic info
     for (let i = 0; i < moves.length; i++) {
       analysisData[i] = { cp: 0, depth: 0, bestMove: null };
       moveCommentary[i] = 'Analysis unavailable';
     }
+    // Hide key moments loading
+    const keyMomentsList = document.getElementById('keyMomentsList');
+    if (keyMomentsList) {
+      keyMomentsList.innerHTML = '<div class="loading-moments">⚠️ Stockfish engine not available</div>';
+    }
     return;
   }
+  
+  console.log('🚀 Starting Stockfish analysis of', moves.length, 'moves');
   
   const ChessClass = window.Chess;
   const tempChess = new ChessClass();
@@ -686,7 +925,7 @@ async function analyzeGame() {
   const movesList = document.getElementById('movesList');
   const loadingDiv = document.createElement('div');
   loadingDiv.id = 'analysis-loading';
-  loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: #ff6b35;';
+  loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: var(--accent-orange);';
   loadingDiv.textContent = 'Analyzing game... This may take a minute.';
   movesList.parentElement.insertBefore(loadingDiv, movesList);
   
@@ -696,9 +935,17 @@ async function analyzeGame() {
   let openingPhase = true;
   let openingMoves = 0;
   
+  // Reset key moments
+  keyMoments = [];
+  let prevEvalForMoments = 0;
+  
   for (let i = 0; i < moves.length; i++) {
     const move = moves[i];
     tempChess.move(move);
+    
+    // Update progress
+    const progress = Math.round(((i + 1) / moves.length) * 100);
+    updateAnalysisStatus(`🔬 Stockfish analyzing: ${i + 1}/${moves.length} (${progress}%)`);
     
     // Analyze position
     const evaluation = await getPositionEvaluation(tempChess.fen(), i);
@@ -711,6 +958,64 @@ async function analyzeGame() {
     // Update annotation and commentary display
     updateMoveAnnotation(i, evaluation);
     updateMoveCommentary(i, commentary);
+    
+    // Track key moments - significant eval swings
+    const currentCp = evaluation.cp || 0;
+    const evalSwing = Math.abs(currentCp - prevEvalForMoments);
+    const isWhiteMove = i % 2 === 0;
+    const player = isWhiteMove ? 'White' : 'Black';
+    
+    // Detect key moments
+    if (evaluation.annotation === '!!') {
+      // Blunder
+      keyMoments.push({
+        moveIndex: i,
+        type: 'blunder',
+        move: move.san,
+        player: player,
+        evalBefore: prevEvalForMoments,
+        evalAfter: currentCp,
+        bestMove: evaluation.bestMove,
+        description: `${player} blunders with ${move.san}. ${evaluation.bestMove ? `${evaluation.bestMove} was much better.` : ''}`
+      });
+    } else if (evaluation.annotation === '!' && evalSwing > 100) {
+      // Mistake
+      keyMoments.push({
+        moveIndex: i,
+        type: 'mistake',
+        move: move.san,
+        player: player,
+        evalBefore: prevEvalForMoments,
+        evalAfter: currentCp,
+        bestMove: evaluation.bestMove,
+        description: `${player} makes a mistake with ${move.san}. Position shifts by ${(evalSwing/100).toFixed(1)} pawns.`
+      });
+    } else if (evalSwing > 200 && i > 0) {
+      // Major turning point
+      const direction = currentCp > prevEvalForMoments ? 'White' : 'Black';
+      keyMoments.push({
+        moveIndex: i,
+        type: 'turning-point',
+        move: move.san,
+        player: player,
+        evalBefore: prevEvalForMoments,
+        evalAfter: currentCp,
+        description: `Turning point! After ${move.san}, ${direction} gains a significant advantage.`
+      });
+    } else if (evaluation.annotation === '!' && evalSwing < 50) {
+      // Brilliant/excellent move
+      keyMoments.push({
+        moveIndex: i,
+        type: 'brilliant',
+        move: move.san,
+        player: player,
+        evalBefore: prevEvalForMoments,
+        evalAfter: currentCp,
+        description: `Excellent move by ${player}! ${move.san} is the engine's top choice.`
+      });
+    }
+    
+    prevEvalForMoments = currentCp;
     
     // Track game phases
     if (i < 20) {
@@ -735,8 +1040,76 @@ async function analyzeGame() {
   // Generate game summary
   gameSummary = generateGameSummary(totalMistakes, totalBlunders, totalInaccuracies, openingMoves);
   
+  // Display key moments
+  displayKeyMoments();
+  
   // Remove loading indicator
   loadingDiv.remove();
+  
+  console.log('✅ Stockfish analysis complete!', {
+    moves: moves.length,
+    blunders: totalBlunders,
+    mistakes: totalMistakes,
+    inaccuracies: totalInaccuracies,
+    keyMoments: keyMoments.length
+  });
+  updateAnalysisStatus('Analysis complete - click Play or use arrows');
+}
+
+function displayKeyMoments() {
+  const keyMomentsList = document.getElementById('keyMomentsList');
+  if (!keyMomentsList) return;
+  
+  keyMomentsList.innerHTML = '';
+  
+  if (keyMoments.length === 0) {
+    keyMomentsList.innerHTML = '<div class="moments-placeholder">No major turning points. Solid game!</div>';
+    return;
+  }
+  
+  // Sort by move order for horizontal scroll
+  const sortedMoments = [...keyMoments].sort((a, b) => a.moveIndex - b.moveIndex);
+  
+  // Show all moments as chips
+  sortedMoments.forEach(moment => {
+    const chip = document.createElement('div');
+    chip.className = `moment-chip ${moment.type}`;
+    chip.dataset.moveIndex = moment.moveIndex;
+    
+    const icon = getKeyMomentIcon(moment.type);
+    const moveNum = Math.floor(moment.moveIndex / 2) + 1;
+    
+    chip.innerHTML = `
+      <span class="chip-icon">${icon}</span>
+      <span class="chip-move">${moveNum}. ${moment.move}</span>
+    `;
+    
+    chip.addEventListener('click', () => {
+      goToMove(moment.moveIndex);
+    });
+    
+    keyMomentsList.appendChild(chip);
+  });
+}
+
+function getKeyMomentIcon(type) {
+  switch(type) {
+    case 'blunder': return '💥';
+    case 'mistake': return '⚠️';
+    case 'turning-point': return '🔄';
+    case 'brilliant': return '✨';
+    default: return '📍';
+  }
+}
+
+function getKeyMomentLabel(type) {
+  switch(type) {
+    case 'blunder': return 'Blunder';
+    case 'mistake': return 'Mistake';
+    case 'turning-point': return 'Turning Point';
+    case 'brilliant': return 'Brilliant';
+    default: return 'Key Move';
+  }
 }
 
 async function getPositionEvaluation(fen, moveIndex) {
@@ -828,6 +1201,7 @@ async function getPositionEvaluation(fen, moveIndex) {
             result.annotation = determineAnnotation(analysisData[moveIndex - 1], result, moveIndex);
           }
           
+          console.log(`📊 Move ${moveIndex + 1}: eval=${result.cp !== undefined ? (result.cp / 100).toFixed(2) : 'mate'} depth=${bestDepth} best=${bestMove || 'none'}`);
           resolve(result);
         }
       }
@@ -839,6 +1213,7 @@ async function getPositionEvaluation(fen, moveIndex) {
     
     stockfish.postMessage(`position fen ${fen}`);
     stockfish.postMessage('go depth 15');
+    console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 20)}...`);
   });
 }
 
@@ -881,108 +1256,140 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
   
   let commentary = '';
   
+  // Calculate eval change
+  const currentCp = evaluation.cp || 0;
+  const prevCp = prevEval ? (prevEval.cp || 0) : 0;
+  const evalChange = currentCp - prevCp;
+  const evalLoss = isWhite ? -evalChange : evalChange; // Positive = player lost advantage
+  
+  // Get piece name for better readability
+  const getPieceName = (p) => {
+    const names = { 'p': 'pawn', 'n': 'knight', 'b': 'bishop', 'r': 'rook', 'q': 'queen', 'k': 'king' };
+    return names[p.toLowerCase()] || p;
+  };
+  
   // Opening phase commentary
   if (moveIndex < 10) {
-    const piece = move.piece.toUpperCase();
-    const to = move.to;
-    
     if (moveIndex === 0) {
       commentary = `${player} opens with ${move.san}. `;
     } else if (moveIndex < 6) {
-      commentary = `${player} plays ${move.san}, developing the ${piece === 'N' ? 'knight' : piece === 'B' ? 'bishop' : piece.toLowerCase()}. `;
+      const pieceName = getPieceName(move.piece);
+      if (move.piece === 'p') {
+        commentary = `${player} plays ${move.san}, advancing a pawn to control the center. `;
+      } else {
+        commentary = `${player} plays ${move.san}, developing the ${pieceName} to an active square. `;
+      }
     }
   }
   
-  // Analyze the move quality
-  if (evaluation.annotation === '!!') {
-    commentary += `This is a blunder! ${player} loses significant advantage. `;
-    if (evaluation.bestMove && evaluation.bestMove !== move.san) {
-      commentary += `The best move was ${evaluation.bestMove}. `;
-    }
-  } else if (evaluation.annotation === '!') {
-    if (prevEval && Math.abs((evaluation.cp || 0) - (prevEval.cp || 0)) > 100) {
-      commentary += `Mistake by ${player}. `;
-    } else {
-      commentary += `Excellent move! ${player} finds a strong continuation. `;
-    }
-  } else if (evaluation.annotation === '?!') {
-    commentary += `Inaccuracy. ${player} could have played more precisely. `;
+  // Tactical commentary first
+  if (move.san.includes('#')) {
+    return `Checkmate! ${player} delivers the final blow with ${move.san}. Game over!`;
   }
   
-  // Tactical commentary
   if (move.captured) {
-    commentary += `${player} captures the ${move.captured.toUpperCase()} on ${move.to}. `;
+    const capturedPiece = getPieceName(move.captured);
+    commentary += `${player} captures the ${capturedPiece} on ${move.to}. `;
   }
   
   if (move.san.includes('+')) {
-    commentary += `${player} delivers a check! `;
+    commentary += `${player} delivers check! `;
   }
   
-  if (move.san.includes('#')) {
-    commentary += `Checkmate! ${player} wins the game! `;
+  // Castling
+  if (move.san === 'O-O' || move.san === 'O-O-O') {
+    const side = move.san === 'O-O' ? 'kingside' : 'queenside';
+    commentary += `${player} castles ${side}, securing the king and connecting the rooks. `;
   }
   
-  // Positional commentary
-  const fen = chessInstance.fen();
-  if (evaluation.bestMove && 
-      typeof evaluation.bestMove === 'string' && 
-      evaluation.bestMove !== move.san &&
-      !/^\d+\.?$/.test(evaluation.bestMove) &&
-      !['1-0', '0-1', '1/2-1/2', '*'].includes(evaluation.bestMove)) {
-    // Try to explain why the best move is better
-    const bestMoveCommentary = explainBestMove(evaluation.bestMove, move.san, chessInstance);
-    if (bestMoveCommentary) {
-      commentary += bestMoveCommentary;
+  // Analyze the move quality with detailed feedback
+  const bestMove = evaluation.bestMove;
+  const hasBetterMove = bestMove && 
+    typeof bestMove === 'string' && 
+    bestMove !== move.san &&
+    !/^\d+\.?$/.test(bestMove) &&
+    !['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove);
+  
+  if (evaluation.annotation === '!!') {
+    // Blunder
+    const lostPawns = Math.abs(evalLoss / 100).toFixed(1);
+    commentary += `Blunder! This move loses ${lostPawns} pawns worth of advantage. `;
+    if (hasBetterMove) {
+      commentary += `Instead, ${bestMove} was much stronger. `;
+      commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
+  } else if (evaluation.annotation === '!') {
+    // Could be mistake or best move depending on context
+    if (evalLoss > 100) {
+      const lostPawns = (evalLoss / 100).toFixed(1);
+      commentary += `Mistake. This cost about ${lostPawns} pawns of advantage. `;
+      if (hasBetterMove) {
+        commentary += `The better move was ${bestMove}. `;
+        commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
+      }
+    } else {
+      commentary += `Strong move! ${player} finds an excellent continuation. `;
+    }
+  } else if (evaluation.annotation === '?!') {
+    // Inaccuracy
+    const lostPawns = (Math.abs(evalLoss) / 100).toFixed(1);
+    commentary += `Inaccuracy. This move isn't optimal, costing about ${lostPawns} pawns. `;
+    if (hasBetterMove) {
+      commentary += `Better was ${bestMove}. `;
+      commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
+    }
+  } else if (hasBetterMove && Math.abs(evalLoss) > 30) {
+    // Slight inaccuracy that doesn't trigger annotation
+    commentary += `A reasonable move, but ${bestMove} was slightly more accurate. `;
   }
   
-  // Strategic commentary based on evaluation
+  // Position assessment
   const cp = evaluation.cp || 0;
-  if (Math.abs(cp) > 200) {
+  const evalDisplay = (Math.abs(cp) / 100).toFixed(1);
+  if (Math.abs(cp) > 300) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} has a significant advantage in this position. `;
+    commentary += `${leading} is winning with a +${evalDisplay} advantage. `;
+  } else if (Math.abs(cp) > 150) {
+    const leading = cp > 0 ? 'White' : 'Black';
+    commentary += `${leading} has a clear advantage (+${evalDisplay}). `;
+  } else if (Math.abs(cp) < 30) {
+    commentary += `The position is roughly equal. `;
   }
   
   return commentary.trim() || `${player} plays ${move.san}.`;
 }
 
-function explainBestMove(bestMove, playedMove, chessInstance) {
-  // Validate bestMove
-  if (!bestMove || typeof bestMove !== 'string') {
-    return '';
+function explainBestMoveDetailed(bestMove, playedMove, evaluation, prevEval) {
+  if (!bestMove || typeof bestMove !== 'string') return '';
+  
+  let explanation = '';
+  
+  // Check what type of move the best move was
+  if (bestMove.includes('x')) {
+    // Best move was a capture
+    const targetSquare = bestMove.match(/x([a-h][1-8])/);
+    if (targetSquare) {
+      explanation += `Capturing on ${targetSquare[1]} would have won material or created a strong threat. `;
+    } else {
+      explanation += `The capture would have won material. `;
+    }
+  } else if (bestMove.includes('+')) {
+    // Best move gave check
+    explanation += `Giving check with ${bestMove} would have maintained pressure and tempo. `;
+  } else if (bestMove.startsWith('N') || bestMove.startsWith('B')) {
+    // Knight or bishop move
+    const piece = bestMove.startsWith('N') ? 'knight' : 'bishop';
+    explanation += `Developing the ${piece} to a more active square would have improved piece coordination. `;
+  } else if (bestMove === 'O-O' || bestMove === 'O-O-O') {
+    explanation += `Castling would have improved king safety. `;
+  } else if (bestMove.match(/^[a-h]/)) {
+    // Pawn move
+    explanation += `The pawn move would have improved pawn structure or created threats. `;
   }
   
-  // Filter out move numbers and invalid moves
-  if (/^\d+\.?$/.test(bestMove) || ['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove)) {
-    return '';
-  }
-  
-  // Check if bestMove is a valid chess move format
-  // Valid moves contain letters (a-h) and numbers (1-8) or special notation
-  if (!/^[a-hO0-9+\-#=xPNBRQK]+/.test(bestMove)) {
-    return '';
-  }
-  
-  // If best move is same as played move, no commentary needed
-  if (bestMove === playedMove) {
-    return '';
-  }
-  
-  // Generate explanation based on move patterns
-  if (bestMove.includes('x') && !playedMove.includes('x')) {
-    return `The best move was to capture with ${bestMove}, creating a tactical opportunity. `;
-  }
-  
-  if (bestMove.includes('+') && !playedMove.includes('+')) {
-    return `The best move was ${bestMove}, giving check and maintaining the initiative. `;
-  }
-  
-  if (bestMove.length > playedMove.length) {
-    return `The best move ${bestMove} was more precise, improving the position. `;
-  }
-  
-  return `The best move was ${bestMove}. `;
+  return explanation;
 }
+
 
 function generateGameSummary(mistakes, blunders, inaccuracies, openingMoves) {
   const totalErrors = mistakes + blunders + inaccuracies;
@@ -1025,26 +1432,31 @@ function generateGameSummary(mistakes, blunders, inaccuracies, openingMoves) {
 }
 
 function updateMoveAnnotation(moveIndex, evaluation) {
-  const annotationEl = document.getElementById(`annotation-${moveIndex}`);
-  if (!annotationEl || !evaluation) return;
+  const moveCell = document.getElementById(`move-${moveIndex}`);
+  if (!moveCell || !evaluation) return;
   
-  annotationEl.innerHTML = '';
+  // Add annotation class to the cell
+  moveCell.classList.remove('blunder', 'mistake', 'inaccuracy', 'best', 'brilliant');
   
-  if (evaluation.annotation) {
-    const icon = document.createElement('span');
-    icon.className = `annotation-icon ${getAnnotationClass(evaluation.annotation)}`;
-    icon.textContent = evaluation.annotation;
-    icon.title = getAnnotationTitle(evaluation.annotation);
-    annotationEl.appendChild(icon);
-  }
+  const iconEl = moveCell.querySelector('.move-icon');
   
-  // Show evaluation if available
-  if (evaluation.cp !== undefined && evaluation.cp !== 0) {
-    const evalSpan = document.createElement('span');
-    evalSpan.className = 'move-eval';
-    const cp = evaluation.cp / 100;
-    evalSpan.textContent = cp > 0 ? `+${cp.toFixed(1)}` : cp.toFixed(1);
-    annotationEl.appendChild(evalSpan);
+  if (evaluation.annotation === '!!') {
+    moveCell.classList.add('blunder');
+    if (iconEl) iconEl.textContent = '??';
+  } else if (evaluation.annotation === '!') {
+    // Could be mistake or best move
+    const prevEval = moveIndex > 0 ? analysisData[moveIndex - 1] : null;
+    const evalChange = prevEval ? Math.abs((evaluation.cp || 0) - (prevEval.cp || 0)) : 0;
+    if (evalChange > 100) {
+      moveCell.classList.add('mistake');
+      if (iconEl) iconEl.textContent = '?';
+    } else {
+      moveCell.classList.add('best');
+      if (iconEl) iconEl.textContent = '!';
+    }
+  } else if (evaluation.annotation === '?!') {
+    moveCell.classList.add('inaccuracy');
+    if (iconEl) iconEl.textContent = '?!';
   }
 }
 
@@ -1063,35 +1475,101 @@ function getAnnotationTitle(annotation) {
 }
 
 function updateMoveCommentary(moveIndex, commentary) {
-  const commentaryEl = document.getElementById(`commentary-${moveIndex}`);
-  if (commentaryEl && commentary) {
-    commentaryEl.textContent = commentary;
-    commentaryEl.style.display = 'block';
-  }
+  // Commentary is now shown in the analysis panel instead
+  // This function is kept for compatibility but does nothing
 }
 
 function displayGameSummary() {
-  const gameInfo = document.getElementById('gameInfo');
-  if (gameSummary) {
-    const summaryDiv = document.createElement('div');
-    summaryDiv.className = 'game-summary';
-    summaryDiv.innerHTML = `<h3>Game Summary</h3><p>${gameSummary}</p>`;
-    gameInfo.appendChild(summaryDiv);
-  }
+  // Game summary is now shown via key moments and move analysis panel
+  // This function is kept for compatibility
+  console.log('Game summary:', gameSummary);
 }
 
 function displayGameInfo(pgn) {
-  const gameInfo = document.getElementById('gameInfo');
   const lines = pgn.split('\n');
   
-  let info = '';
+  // Parse PGN headers into an object
+  const headers = {};
   lines.forEach(line => {
-    if (line.startsWith('[') && line.includes('"')) {
-      info += line + '<br>';
+    const match = line.match(/\[(\w+)\s+"([^"]*)"\]/);
+    if (match) {
+      headers[match[1]] = match[2];
     }
   });
   
-  gameInfo.innerHTML = info || 'Game information not available';
+  // Display player info
+  displayPlayerInfo(headers);
+  
+  // Display game meta
+  displayGameMeta(headers);
+}
+
+function displayPlayerInfo(headers) {
+  const whiteEl = document.getElementById('playerWhite');
+  const blackEl = document.getElementById('playerBlack');
+  
+  if (whiteEl) {
+    const nameEl = whiteEl.querySelector('.player-name');
+    const ratingEl = whiteEl.querySelector('.player-rating');
+    
+    if (nameEl) {
+      nameEl.textContent = headers.White || 'White';
+    }
+    if (ratingEl) {
+      const rating = headers.WhiteElo || '';
+      ratingEl.textContent = rating ? `(${rating})` : '';
+    }
+  }
+  
+  if (blackEl) {
+    const nameEl = blackEl.querySelector('.player-name');
+    const ratingEl = blackEl.querySelector('.player-rating');
+    
+    if (nameEl) {
+      nameEl.textContent = headers.Black || 'Black';
+    }
+    if (ratingEl) {
+      const rating = headers.BlackElo || '';
+      ratingEl.textContent = rating ? `(${rating})` : '';
+    }
+  }
+}
+
+function displayGameMeta(headers) {
+  const metaEl = document.getElementById('gameMeta');
+  if (!metaEl) return;
+  
+  let metaInfo = [];
+  
+  // Event type
+  if (headers.Event) {
+    metaInfo.push(headers.Event);
+  }
+  
+  // Time control
+  if (headers.TimeControl) {
+    const tc = headers.TimeControl;
+    if (tc.includes('+')) {
+      const [base, inc] = tc.split('+');
+      const baseMin = Math.floor(parseInt(base) / 60);
+      metaInfo.push(`${baseMin}+${inc}`);
+    } else if (!isNaN(tc)) {
+      const baseMin = Math.floor(parseInt(tc) / 60);
+      metaInfo.push(`${baseMin} min`);
+    }
+  }
+  
+  // Date
+  if (headers.Date) {
+    metaInfo.push(headers.Date.replace(/\./g, '-'));
+  }
+  
+  // Result
+  if (headers.Result && headers.Result !== '*') {
+    metaInfo.push(headers.Result);
+  }
+  
+  metaEl.textContent = metaInfo.join(' • ');
 }
 
 function resetToStart() {
@@ -1099,11 +1577,15 @@ function resetToStart() {
   chess.reset();
   board.position('start');
   updateMoveHighlight();
+  clearMoveHighlights();
   updateEvaluation(0);
 }
 
 function goToMove(index) {
   if (index < -1 || index >= moves.length) return;
+  
+  // Reset exploration mode
+  isExploringLine = false;
   
   currentMoveIndex = index;
   chess.reset();
@@ -1116,6 +1598,13 @@ function goToMove(index) {
   board.position(position);
   
   updateMoveHighlight();
+  
+  // Highlight the move on the board
+  if (index >= 0) {
+    highlightMove(moves[index]);
+  } else {
+    clearMoveHighlights();
+  }
   
   if (index >= 0 && analysisData[index]) {
     const eval = analysisData[index];
@@ -1131,21 +1620,252 @@ function goToMove(index) {
   }
 }
 
-function updateMoveHighlight() {
-  document.querySelectorAll('.move-item').forEach(item => {
-    item.classList.remove('active');
-  });
+function highlightMove(move) {
+  clearMoveHighlights();
   
-  if (currentMoveIndex >= 0) {
-    const activeItem = document.querySelector(`[data-move-index="${currentMoveIndex}"]`);
-    if (activeItem) {
-      activeItem.classList.add('active');
-      activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!move || !move.from || !move.to) return;
+  
+  const boardEl = document.getElementById('board');
+  if (!boardEl) return;
+  
+  // Add highlight classes to squares
+  const fromSquare = boardEl.querySelector(`[data-square="${move.from}"]`);
+  const toSquare = boardEl.querySelector(`[data-square="${move.to}"]`);
+  
+  if (fromSquare) {
+    fromSquare.classList.add('highlight-from');
+  }
+  if (toSquare) {
+    toSquare.classList.add('highlight-to');
+  }
+  
+  // Draw played move arrow
+  drawMoveArrow(move.from, move.to, 'played');
+  
+  // Draw best move arrow if there was a better move
+  if (currentMoveIndex >= 0 && analysisData[currentMoveIndex]) {
+    const analysis = analysisData[currentMoveIndex];
+    const bestMove = analysis.bestMove;
+    const annotation = analysis.annotation;
+    
+    // Show best move arrow if this wasn't the best move
+    if (bestMove && typeof bestMove === 'string' && bestMove.length >= 4) {
+      // Check if the played move matches the best move
+      const bestFrom = bestMove.substring(0, 2);
+      const bestTo = bestMove.substring(2, 4);
+      
+      // Only draw if different from played move
+      if (bestFrom !== move.from || bestTo !== move.to) {
+        // Draw best move arrow - more prominent for mistakes/blunders
+        drawBestMoveArrow(bestMove, annotation);
+      }
     }
   }
 }
 
-function updateEvaluation(cp) {
+function clearMoveHighlights() {
+  // Remove highlight classes
+  document.querySelectorAll('.highlight-from, .highlight-to').forEach(el => {
+    el.classList.remove('highlight-from', 'highlight-to');
+  });
+  
+  // Clear arrows
+  const arrowsSvg = document.getElementById('moveArrows');
+  if (arrowsSvg) {
+    arrowsSvg.innerHTML = '';
+  }
+}
+
+function drawMoveArrow(from, to, type = 'played') {
+  const arrowsSvg = document.getElementById('moveArrows');
+  const boardEl = document.getElementById('board');
+  
+  if (!arrowsSvg || !boardEl) return;
+  
+  // Get board dimensions
+  const boardRect = boardEl.getBoundingClientRect();
+  const squareSize = boardRect.width / 8;
+  
+  // Convert square names to coordinates
+  const fromCoords = squareToCoords(from, squareSize);
+  const toCoords = squareToCoords(to, squareSize);
+  
+  if (!fromCoords || !toCoords) return;
+  
+  // Shorten arrow to not cover pieces
+  const dx = toCoords.x - fromCoords.x;
+  const dy = toCoords.y - fromCoords.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len === 0) return;
+  const shortenBy = squareSize * 0.35;
+  
+  const startX = fromCoords.x + (dx / len) * shortenBy;
+  const startY = fromCoords.y + (dy / len) * shortenBy;
+  const endX = toCoords.x - (dx / len) * shortenBy;
+  const endY = toCoords.y - (dy / len) * shortenBy;
+  
+  // Create arrow line
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', startX);
+  line.setAttribute('y1', startY);
+  line.setAttribute('x2', endX);
+  line.setAttribute('y2', endY);
+  line.classList.add('arrow-line', `arrow-${type}`);
+  
+  // Create arrow head
+  const headSize = squareSize * (type === 'best' ? 0.3 : 0.25);
+  const angle = Math.atan2(dy, dx);
+  const headPoints = [
+    [endX, endY],
+    [endX - headSize * Math.cos(angle - Math.PI / 6), endY - headSize * Math.sin(angle - Math.PI / 6)],
+    [endX - headSize * Math.cos(angle + Math.PI / 6), endY - headSize * Math.sin(angle + Math.PI / 6)]
+  ];
+  
+  const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+  head.setAttribute('points', headPoints.map(p => p.join(',')).join(' '));
+  head.classList.add('arrow-head', `arrow-${type}`);
+  
+  arrowsSvg.appendChild(line);
+  arrowsSvg.appendChild(head);
+}
+
+// Draw the best move arrow (green, for what should have been played)
+function drawBestMoveArrow(bestMoveUCI, annotation) {
+  if (!bestMoveUCI || typeof bestMoveUCI !== 'string') return;
+  
+  // UCI format: e2e4, e7e8q (with promotion)
+  // Need at least 4 characters
+  if (bestMoveUCI.length < 4) return;
+  
+  const from = bestMoveUCI.substring(0, 2);
+  const to = bestMoveUCI.substring(2, 4);
+  
+  // Validate squares
+  if (!/^[a-h][1-8]$/.test(from) || !/^[a-h][1-8]$/.test(to)) return;
+  
+  // Determine arrow type based on annotation
+  let arrowType = 'best';
+  if (annotation === '!!' || annotation === '!') {
+    arrowType = 'best-critical'; // More prominent for blunders/mistakes
+  }
+  
+  drawMoveArrow(from, to, arrowType);
+}
+
+function squareToCoords(square, squareSize) {
+  if (!square || square.length !== 2) return null;
+  
+  const file = square.charCodeAt(0) - 97; // 'a' = 0, 'h' = 7
+  const rank = parseInt(square[1]) - 1; // '1' = 0, '8' = 7
+  
+  // Adjust for board orientation
+  let x, y;
+  if (boardOrientation === 'black') {
+    x = (7 - file + 0.5) * squareSize;
+    y = (rank + 0.5) * squareSize;
+  } else {
+    x = (file + 0.5) * squareSize;
+    y = (7 - rank + 0.5) * squareSize;
+  }
+  
+  return { x, y };
+}
+
+function updateMoveHighlight() {
+  // Remove active from all move cells
+  document.querySelectorAll('.move-cell').forEach(item => {
+    item.classList.remove('active');
+  });
+  
+  if (currentMoveIndex >= 0) {
+    const activeCell = document.getElementById(`move-${currentMoveIndex}`);
+    if (activeCell) {
+      activeCell.classList.add('active');
+      activeCell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    // Update the move analysis panel
+    updateMoveAnalysisPanel(currentMoveIndex);
+  } else {
+    // Reset analysis panel
+    resetMoveAnalysisPanel();
+  }
+}
+
+function updateMoveAnalysisPanel(moveIndex) {
+  const move = moves[moveIndex];
+  const analysis = analysisData[moveIndex];
+  const commentary = moveCommentary[moveIndex];
+  
+  const iconEl = document.getElementById('analysisIcon');
+  const moveEl = document.getElementById('analysisMove');
+  const textEl = document.getElementById('analysisText');
+  const evalEl = document.getElementById('analysisEval');
+  const hintEl = document.getElementById('bestMoveHint');
+  const hintMoveEl = document.getElementById('hintMove');
+  
+  if (!iconEl || !moveEl || !textEl) return;
+  
+  const moveNum = Math.floor(moveIndex / 2) + 1;
+  const isWhite = moveIndex % 2 === 0;
+  const player = isWhite ? 'White' : 'Black';
+  
+  // Set icon based on annotation
+  if (analysis) {
+    if (analysis.annotation === '!!') {
+      iconEl.textContent = '💥';
+    } else if (analysis.annotation === '!') {
+      iconEl.textContent = '⚠️';
+    } else if (analysis.annotation === '?!') {
+      iconEl.textContent = '❓';
+    } else {
+      iconEl.textContent = '✓';
+    }
+  } else {
+    iconEl.textContent = '📊';
+  }
+  
+  // Move notation
+  moveEl.textContent = `${moveNum}. ${isWhite ? '' : '...'}${move.san}`;
+  
+  // Commentary text
+  textEl.textContent = commentary || `${player} plays ${move.san}`;
+  
+  // Evaluation
+  if (analysis && analysis.cp !== undefined) {
+    const cp = analysis.cp / 100;
+    evalEl.textContent = cp > 0 ? `+${cp.toFixed(1)}` : cp.toFixed(1);
+    evalEl.className = 'analysis-eval' + (cp > 1 ? ' winning' : cp < -1 ? ' losing' : '');
+    evalEl.style.display = 'block';
+  } else {
+    evalEl.style.display = 'none';
+  }
+  
+  // Best move hint
+  if (analysis && analysis.bestMove && analysis.bestMove !== move.san && 
+      (analysis.annotation === '!!' || analysis.annotation === '!' || analysis.annotation === '?!')) {
+    hintMoveEl.textContent = analysis.bestMove;
+    hintEl.style.display = 'flex';
+  } else {
+    hintEl.style.display = 'none';
+  }
+}
+
+function resetMoveAnalysisPanel() {
+  const iconEl = document.getElementById('analysisIcon');
+  const moveEl = document.getElementById('analysisMove');
+  const textEl = document.getElementById('analysisText');
+  const evalEl = document.getElementById('analysisEval');
+  const hintEl = document.getElementById('bestMoveHint');
+  
+  if (iconEl) iconEl.textContent = '📊';
+  if (moveEl) moveEl.textContent = 'Ready to analyze';
+  if (textEl) textEl.textContent = 'Click Play or use arrows to step through the game';
+  if (evalEl) evalEl.style.display = 'none';
+  if (hintEl) hintEl.style.display = 'none';
+}
+
+function updateEvaluation(cp, isFromStockfish = true) {
   const evalBar = document.getElementById('evalBar');
   const evalText = document.getElementById('evalText');
   
@@ -1153,26 +1873,32 @@ function updateEvaluation(cp) {
   
   // Convert centipawns to display value
   const displayValue = cp / 100;
-  evalText.textContent = displayValue > 0 ? `+${displayValue.toFixed(1)}` : displayValue.toFixed(1);
+  const evalStr = displayValue > 0 ? `+${displayValue.toFixed(1)}` : displayValue.toFixed(1);
   
-  // Update bar (vertical bar, 50% is equal, 0% = black winning, 100% = white winning)
+  // Show Stockfish indicator if this is a real Stockfish evaluation
+  if (isFromStockfish && stockfish) {
+    evalText.textContent = evalStr;
+    evalText.title = 'Stockfish evaluation';
+    evalText.style.fontWeight = 'bold';
+  } else {
+    evalText.textContent = evalStr;
+    evalText.title = 'Analysis pending';
+    evalText.style.fontWeight = 'normal';
+  }
+  
+  // Vertical bar: white at bottom (100% = all white), black at top (0% = all black)
+  // 50% is equal position
   // Clamp cp to reasonable range (-1000 to +1000 centipawns)
   const clampedCp = Math.max(-1000, Math.min(1000, cp));
-  const percentage = 50 + (clampedCp / 20); // 50% base, ±50% for ±1000cp
   
-  if (cp > 0) {
-    // White advantage - bar from bottom
-    evalBar.style.bottom = '0';
-    evalBar.style.top = 'auto';
-    evalBar.style.height = `${Math.max(0, Math.min(100, percentage))}%`;
-    evalBar.className = 'eval-fill';
-  } else {
-    // Black advantage - bar from top
-    evalBar.style.top = '0';
-    evalBar.style.bottom = 'auto';
-    evalBar.style.height = `${Math.max(0, Math.min(100, 100 - percentage))}%`;
-    evalBar.className = 'eval-fill black-leading';
-  }
+  // Convert to percentage: +1000cp = 100% white, -1000cp = 0% white (100% black)
+  const whitePercentage = 50 + (clampedCp / 20); // 50% base, ±50% for ±1000cp
+  
+  // White fills from bottom up
+  evalBar.style.height = `${Math.max(0, Math.min(100, whitePercentage))}%`;
+  evalBar.style.bottom = '0';
+  evalBar.style.top = 'auto';
+  evalBar.className = 'eval-fill-vertical';
 }
 
 function playMoves() {
@@ -1204,6 +1930,38 @@ function pauseMoves() {
 function stopMoves() {
   pauseMoves();
   resetToStart();
+}
+
+function flipBoard() {
+  if (!board) return;
+  
+  boardOrientation = boardOrientation === 'white' ? 'black' : 'white';
+  board.orientation(boardOrientation);
+  
+  // Swap player bars visually by reordering in DOM
+  const boardSection = document.querySelector('.board-section');
+  const playerBlack = document.getElementById('playerBlack');
+  const playerWhite = document.getElementById('playerWhite');
+  const boardWithEval = document.querySelector('.board-with-eval');
+  
+  if (boardSection && playerBlack && playerWhite && boardWithEval) {
+    if (boardOrientation === 'black') {
+      // White on top, Black on bottom
+      boardSection.insertBefore(playerWhite, boardWithEval);
+      boardWithEval.after(playerBlack);
+    } else {
+      // Black on top, White on bottom (default)
+      boardSection.insertBefore(playerBlack, boardWithEval);
+      boardWithEval.after(playerWhite);
+    }
+  }
+  
+  // Redraw arrows with new orientation
+  if (currentMoveIndex >= 0 && moves[currentMoveIndex]) {
+    highlightMove(moves[currentMoveIndex]);
+  }
+  
+  console.log('Board flipped to:', boardOrientation);
 }
 
 function previousMove() {
