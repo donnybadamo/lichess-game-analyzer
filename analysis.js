@@ -790,14 +790,16 @@ async function initializeStockfish() {
       stockfish = new Worker(stockfishUrl);
       
       let ready = false;
+      let messageCount = 0;
       
       stockfish.onmessage = (event) => {
         const message = event.data || event;
+        messageCount++;
         
         if (typeof message === 'string') {
-          // Log Stockfish messages for debugging
-          if (message.includes('id name') || message.includes('uciok') || message.includes('readyok')) {
-            console.log('♟️ Stockfish:', message);
+          // Log first few messages and important ones for debugging
+          if (messageCount <= 5 || message.includes('id name') || message.includes('uciok') || message.includes('readyok')) {
+            console.log('♟️ Stockfish init msg:', message.substring(0, 100));
           }
           
           if (message.includes('uciok')) {
@@ -805,9 +807,18 @@ async function initializeStockfish() {
             stockfish.postMessage('isready');
           } else if (message.includes('readyok') && !ready) {
             ready = true;
-            console.log('✅ Stockfish engine ready!');
+            console.log('✅ Stockfish engine ready! Received', messageCount, 'messages');
             updateAnalysisStatus('Stockfish ready');
+            
+            // Quick test to verify Stockfish is actually analyzing
+            console.log('🧪 Testing Stockfish with starting position...');
+            stockfish.postMessage('position startpos');
+            stockfish.postMessage('go depth 5');
             resolve();
+          } else if (message.startsWith('info') && message.includes('score cp')) {
+            console.log('📊 Stockfish test eval:', message.substring(0, 80));
+          } else if (message.startsWith('bestmove')) {
+            console.log('✅ Stockfish test complete:', message);
           }
         }
       };
@@ -815,14 +826,21 @@ async function initializeStockfish() {
       stockfish.onerror = (error) => {
         console.error('❌ Stockfish worker error:', error);
         updateAnalysisStatus('Engine error');
+        stockfish = null;
+        resolve();
       };
       
+      console.log('📤 Sending uci command to Stockfish...');
       stockfish.postMessage('uci');
       
       // Timeout fallback
       setTimeout(() => {
         if (!ready) {
-          console.warn('⚠️ Stockfish initialization timeout');
+          console.warn('⚠️ Stockfish initialization timeout after', messageCount, 'messages');
+          if (messageCount === 0) {
+            console.error('❌ No messages received from Stockfish - worker may have failed to load');
+            stockfish = null;
+          }
           updateAnalysisStatus('Engine timeout - using fallback');
           resolve();
         }
@@ -830,6 +848,7 @@ async function initializeStockfish() {
     } catch (e) {
       console.error('❌ Could not initialize Stockfish:', e);
       updateAnalysisStatus('Engine not available');
+      stockfish = null;
       resolve();
     }
   });
@@ -1114,6 +1133,7 @@ function getKeyMomentLabel(type) {
 
 async function getPositionEvaluation(fen, moveIndex) {
   if (!stockfish) {
+    console.warn('⚠️ Stockfish not available for evaluation');
     return { cp: 0, depth: 0, bestMove: null, annotation: '', moveIndex: moveIndex };
   }
 
@@ -1123,14 +1143,15 @@ async function getPositionEvaluation(fen, moveIndex) {
     let depth = 0;
     let bestDepth = 0;
     let pv = [];
-    let handler = null;
+    let resolved = false;
     
-    const timeout = setTimeout(() => {
-      if (handler && stockfish.removeEventListener) {
-        stockfish.removeEventListener('message', handler);
-      }
+    const finishAnalysis = (reason) => {
+      if (resolved) return;
+      resolved = true;
+      
       const result = { 
-        cp: evaluation?.cp || 0, 
+        cp: evaluation?.cp || 0,
+        mate: evaluation?.mate,
         depth: bestDepth, 
         bestMove: bestMove,
         pv: pv,
@@ -1143,77 +1164,77 @@ async function getPositionEvaluation(fen, moveIndex) {
         result.annotation = determineAnnotation(analysisData[moveIndex - 1], result, moveIndex);
       }
       
+      console.log(`📊 Move ${moveIndex + 1} (${reason}): eval=${result.cp !== undefined ? (result.cp / 100).toFixed(2) : 'M' + result.mate} depth=${bestDepth} best=${bestMove || 'none'}`);
       resolve(result);
-    }, 2000); // 2 second timeout per position
+    };
     
-    handler = (event) => {
+    const timeout = setTimeout(() => {
+      finishAnalysis('timeout');
+    }, 3000); // 3 second timeout per position
+    
+    // Create message handler for this analysis
+    const handler = (event) => {
       const message = event.data || event;
       
       if (typeof message === 'string') {
-        // Parse evaluation
-        const evalMatch = message.match(/score (cp|mate) (-?\d+)/);
-        const depthMatch = message.match(/depth (\d+)/);
-        const pvMatch = message.match(/pv (.+)/);
-        
-        if (depthMatch) {
-          depth = parseInt(depthMatch[1]);
-          if (depth > bestDepth) bestDepth = depth;
-        }
-        
-        if (evalMatch) {
-          const score = parseInt(evalMatch[2]);
-          evaluation = evalMatch[1] === 'mate' ? { mate: score } : { cp: score };
-        }
-        
-        if (pvMatch) {
-          // Split PV and filter out move numbers and game results
-          pv = pvMatch[1].split(' ').filter(move => {
-            // Filter out move numbers (e.g., "1.", "2.", "15.")
-            if (/^\d+\.?$/.test(move)) return false;
-            // Filter out game results
-            if (['1-0', '0-1', '1/2-1/2', '*'].includes(move)) return false;
-            return true;
-          });
-          // Get first valid move as best move
-          if (!bestMove && pv.length > 0) {
-            bestMove = pv[0];
+        // Debug: log info messages
+        if (message.startsWith('info') && message.includes('score')) {
+          // Parse evaluation from info string
+          const evalMatch = message.match(/score (cp|mate) (-?\d+)/);
+          const depthMatch = message.match(/depth (\d+)/);
+          const pvMatch = message.match(/ pv (.+)/);
+          
+          if (depthMatch) {
+            depth = parseInt(depthMatch[1]);
+            if (depth > bestDepth) bestDepth = depth;
           }
-        }
-        
-        // Stop when we have enough depth
-        if (depth >= 12 && evaluation) {
+          
+          if (evalMatch) {
+            const score = parseInt(evalMatch[2]);
+            evaluation = evalMatch[1] === 'mate' ? { mate: score } : { cp: score };
+          }
+          
+          if (pvMatch) {
+            // Split PV and filter out move numbers and game results
+            pv = pvMatch[1].split(' ').filter(move => {
+              if (/^\d+\.?$/.test(move)) return false;
+              if (['1-0', '0-1', '1/2-1/2', '*'].includes(move)) return false;
+              return move.length >= 2;
+            });
+            // Get first valid move as best move
+            if (pv.length > 0) {
+              bestMove = pv[0];
+            }
+          }
+          
+          // Stop when we have enough depth
+          if (depth >= 12 && evaluation) {
+            clearTimeout(timeout);
+            finishAnalysis('depth reached');
+          }
+        } else if (message.startsWith('bestmove')) {
+          // Engine finished analyzing
+          const bestMoveMatch = message.match(/bestmove (\S+)/);
+          if (bestMoveMatch && !bestMove) {
+            bestMove = bestMoveMatch[1];
+          }
           clearTimeout(timeout);
-          if (stockfish.removeEventListener) {
-            stockfish.removeEventListener('message', handler);
-          }
-          
-          const result = { 
-            ...evaluation, 
-            depth: bestDepth, 
-            bestMove: bestMove,
-            pv: pv,
-            annotation: '',
-            moveIndex: moveIndex
-          };
-          
-          // Compare with previous move to determine annotation
-          if (moveIndex > 0 && analysisData[moveIndex - 1]) {
-            result.annotation = determineAnnotation(analysisData[moveIndex - 1], result, moveIndex);
-          }
-          
-          console.log(`📊 Move ${moveIndex + 1}: eval=${result.cp !== undefined ? (result.cp / 100).toFixed(2) : 'mate'} depth=${bestDepth} best=${bestMove || 'none'}`);
-          resolve(result);
+          finishAnalysis('bestmove');
         }
       }
     };
     
-    // Store original handler
-    const originalHandler = stockfish.onmessage;
+    // Set the handler
     stockfish.onmessage = handler;
     
+    // Stop any previous analysis and start new one
+    stockfish.postMessage('stop');
     stockfish.postMessage(`position fen ${fen}`);
     stockfish.postMessage('go depth 15');
-    console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 20)}...`);
+    
+    if (moveIndex % 10 === 0 || moveIndex === 0) {
+      console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 30)}...`);
+    }
   });
 }
 
