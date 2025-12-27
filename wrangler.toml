@@ -1,7 +1,7 @@
 # Cloudflare Workers configuration
 # For Key Vault proxy worker
 
-name = "lichess-secrets-proxy"
+name = "chess-commentator"
 main = "cloudflare-worker-keyvault.js"
 compatibility_date = "2024-12-01"
 compatibility_flags = []
