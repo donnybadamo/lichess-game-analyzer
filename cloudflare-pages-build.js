@@ -22,7 +22,6 @@ const filesToCopy = [
   'analysis.html',
   'analysis.css',
   'elevenlabs-tts.js',
-  'azure-keyvault.js',
   'init.js'  // Needed for loading libraries
 ];
 

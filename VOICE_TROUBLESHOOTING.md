@@ -126,10 +126,10 @@ fetch(`${workerUrl}/get-secret`, {
 Run this in the console to get a full diagnostic:
 
 ```javascript
-// Copy and paste the contents of debug-voice-troubleshoot.js
+// Note: The debug-voice-troubleshoot.js file has been removed. Use the steps below instead:
 // Or load it:
 const script = document.createElement('script');
-script.src = chrome.runtime.getURL('debug-voice-troubleshoot.js');
+// Run the checks below directly in the browser console instead
 document.head.appendChild(script);
 ```
 

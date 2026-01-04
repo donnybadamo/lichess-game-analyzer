@@ -118,11 +118,12 @@ body {
 .review-container {
   display: flex;
   max-height: calc(100vh - 80px);
-  overflow: hidden;
+  overflow: visible;
   background: var(--bg-surface);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   border: 1px solid var(--border);
+  align-items: stretch;
 }
 
 /* Board Section - Left Side */
@@ -131,12 +132,12 @@ body {
   flex-direction: column;
   padding: 20px;
   background: var(--background);
-  flex-shrink: 1;
+  flex-shrink: 0;
   flex-grow: 0;
   justify-content: center;
+  align-items: center;
   border-radius: 12px 0 0 12px;
-  min-width: 0; /* Allow shrinking */
-  overflow: hidden;
+  overflow: visible;
 }
 
 .player-bar {
@@ -166,6 +167,8 @@ body {
 .board-with-eval {
   display: flex;
   gap: 8px;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .eval-bar {
@@ -232,10 +235,13 @@ body {
 
 .board-area {
   position: relative;
-  /* Responsive: takes available space, max 480px, min 280px */
-  width: clamp(280px, min(calc(100vh - 280px), calc(100vw - 450px)), 520px);
+  /* Responsive: scale based on available height, with reasonable min/max */
+  /* Primary constraint: viewport height minus header/controls/padding */
+  width: clamp(300px, min(calc(100vh - 320px), calc(100vw - 500px)), 600px);
   aspect-ratio: 1;
-  flex-shrink: 1;
+  flex-shrink: 0;
+  flex-grow: 0;
+  transition: width 0.3s ease;
 }
 
 #board {
@@ -244,6 +250,7 @@ body {
   border-radius: 4px;
   overflow: hidden;
   border: 2px solid var(--border);
+  transition: width 0.3s ease, height 0.3s ease;
 }
 
 .move-arrows {
@@ -325,18 +332,20 @@ body {
 }
 
 .nav-btn {
-  width: 44px;
+  min-width: 44px;
   height: 40px;
+  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   background: var(--bg-surface);
   color: var(--foreground);
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  white-space: nowrap;
 }
 
 .nav-btn:hover {
@@ -348,7 +357,7 @@ body {
   background: var(--primary);
   color: var(--primary-foreground);
   border-color: var(--primary);
-  width: 52px;
+  min-width: 60px;
 }
 
 .nav-btn.play-btn:hover {
@@ -823,10 +832,39 @@ body {
   background: var(--bg-hover);
 }
 
+/* Ultrawide support - larger boards for wide screens */
+@media (min-width: 1920px) {
+  .board-area {
+    /* On ultrawide, allow larger boards, scale with viewport height */
+    width: clamp(450px, min(calc(100vh - 350px), calc(100vw - 600px)), 700px);
+  }
+  
+  .analysis-panel {
+    min-width: 360px;
+    max-width: 500px;
+  }
+  
+  .review-container {
+    max-width: 95vw; /* Allow more width on ultrawide */
+  }
+}
+
+/* Extra wide ultrawide (3440px+) */
+@media (min-width: 2560px) {
+  .board-area {
+    width: clamp(500px, min(calc(100vh - 380px), calc(100vw - 700px)), 800px);
+  }
+  
+  .analysis-panel {
+    min-width: 400px;
+    max-width: 550px;
+  }
+}
+
 /* Responsive */
 @media (max-width: 1100px) {
   .board-area {
-    width: clamp(260px, calc(100vh - 280px), 420px);
+    width: clamp(300px, min(calc(100vh - 300px), calc(100vw - 400px)), 450px);
   }
   
   .analysis-panel {
@@ -856,7 +894,7 @@ body {
   }
   
   .board-area {
-    width: min(calc(100vw - 80px), 420px);
+    width: min(calc(100vw - 80px), calc(100vh - 200px), 420px);
     margin: 0 auto;
   }
   
@@ -914,13 +952,14 @@ body {
   }
   
   .nav-btn {
-    width: 36px;
+    min-width: 36px;
     height: 34px;
-    font-size: 13px;
+    font-size: 12px;
+    padding: 0 6px;
   }
   
   .nav-btn.play-btn {
-    width: 42px;
+    min-width: 50px;
   }
   
   .move-analysis {
@@ -952,6 +991,14 @@ body {
     width: 100px;
   }
 }
+
+
+
+
+
+
+
+
 
 
 

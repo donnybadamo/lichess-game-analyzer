@@ -115,13 +115,15 @@ async function fetchAgentVoiceId(apiKey, agentId) {
       }
       
       // Try to find voice ID in various locations
-      const voiceId = agentData.voice_id || 
+      const voiceId = agentData.conversation_config?.tts?.voice_id ||  // Most common location
+                     agentData.voice_id || 
                      agentData.voice?.voice_id ||
                      agentData.voice?.id ||
                      agentData.agent?.voice_id ||
                      agentData.agent?.voice?.voice_id ||
                      agentData.config?.voice_id ||
                      agentData.config?.voice?.voice_id ||
+                     agentData.config?.tts?.voice_id ||
                      agentData.voiceId ||
                      agentData.voice_settings?.voice_id;
       
@@ -161,9 +163,9 @@ async function speakWithElevenLabs(text) {
       return false;
     }
     
-    // Verify API key format
-    if (!apiKey.startsWith('sk_')) {
-      console.warn('⚠️ API key format looks incorrect (should start with "sk_")');
+    // Verify API key format (some API keys may not start with sk_)
+    if (!apiKey.startsWith('sk_') && apiKey.length < 20) {
+      console.warn('⚠️ API key format looks unusual (most ElevenLabs keys start with "sk_")');
     }
     
     // ONLY use agent API to fetch voice ID (no manual override)
@@ -249,19 +251,62 @@ async function speakWithElevenLabs(text) {
     const audioUrl = URL.createObjectURL(audioBlob);
     const audio = new Audio(audioUrl);
     
+    // Store audio globally so it can be stopped if needed
+    if (typeof window !== 'undefined') {
+      window.currentElevenLabsAudio = audio;
+    }
+    
     return new Promise((resolve) => {
+      // Check if audio was stopped externally
+      let wasStopped = false;
+      
+      const checkStopped = () => {
+        if (typeof window !== 'undefined' && window.currentElevenLabsAudio !== audio) {
+          wasStopped = true;
+          URL.revokeObjectURL(audioUrl);
+          resolve(false);
+        }
+      };
+      
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
-        resolve(true);
+        if (!wasStopped) {
+          URL.revokeObjectURL(audioUrl);
+          if (typeof window !== 'undefined' && window.currentElevenLabsAudio === audio) {
+            window.currentElevenLabsAudio = null;
+          }
+          resolve(true);
+        }
       };
       audio.onerror = (error) => {
-        console.error('Audio error:', error);
-        URL.revokeObjectURL(audioUrl);
-        resolve(false);
+        if (!wasStopped) {
+          console.error('Audio error:', error);
+          URL.revokeObjectURL(audioUrl);
+          if (typeof window !== 'undefined' && window.currentElevenLabsAudio === audio) {
+            window.currentElevenLabsAudio = null;
+          }
+          resolve(false);
+        }
+      };
+      audio.onpause = () => {
+        // If paused externally (not by user), it was stopped
+        if (audio.currentTime === 0 && !wasStopped) {
+          wasStopped = true;
+          URL.revokeObjectURL(audioUrl);
+          if (typeof window !== 'undefined' && window.currentElevenLabsAudio === audio) {
+            window.currentElevenLabsAudio = null;
+          }
+          resolve(false);
+        }
       };
       audio.play().catch(err => {
-        console.error('Play error:', err);
-        resolve(false);
+        if (!wasStopped) {
+          console.error('Play error:', err);
+          URL.revokeObjectURL(audioUrl);
+          if (typeof window !== 'undefined' && window.currentElevenLabsAudio === audio) {
+            window.currentElevenLabsAudio = null;
+          }
+          resolve(false);
+        }
       });
     });
     

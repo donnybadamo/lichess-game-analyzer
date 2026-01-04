@@ -14,6 +14,8 @@ let playInterval = null;
 let voiceEnabled = true;
 let synth = window.speechSynthesis;
 let selectedVoice = null;
+let currentAudio = null; // Track currently playing audio to stop it
+let currentSpeechPromise = null; // Track current speech promise to cancel it
 let useGoogleTTS = false;
 let googleTTSApiKey = null;
 let boardOrientation = 'white'; // 'white' or 'black'
@@ -375,8 +377,34 @@ async function speakWithGoogleTTS(text) {
     
     const data = await response.json();
     const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+    
+    // Store audio globally so it can be stopped
+    currentAudio = audio;
+    
     await audio.play();
-    return true;
+    
+    // Wait for audio to finish or be stopped
+    return new Promise((resolve) => {
+      audio.onended = () => {
+        if (currentAudio === audio) {
+          currentAudio = null;
+        }
+        resolve(true);
+      };
+      audio.onerror = () => {
+        if (currentAudio === audio) {
+          currentAudio = null;
+        }
+        resolve(false);
+      };
+      audio.onpause = () => {
+        // If paused externally (currentTime reset), it was stopped
+        if (audio.currentTime === 0 && currentAudio === audio) {
+          currentAudio = null;
+          resolve(false);
+        }
+      };
+    });
   } catch (error) {
     console.error('Google TTS error:', error);
     return false;
@@ -510,22 +538,22 @@ async function initializeGame(pgn) {
         // Try extension URL first, fall back to CDN if context is invalid
         if (isExtensionValid()) {
           try {
-            const pieceMap = {
-              'wK': 'white-king',
-              'wQ': 'white-queen',
-              'wR': 'white-rook',
-              'wB': 'white-bishop',
-              'wN': 'white-knight',
-              'wP': 'white-pawn',
-              'bK': 'black-king',
-              'bQ': 'black-queen',
-              'bR': 'black-rook',
-              'bB': 'black-bishop',
-              'bN': 'black-knight',
-              'bP': 'black-pawn'
-            };
-            const pieceName = pieceMap[piece] || piece;
-            return chrome.runtime.getURL(`libs/pieces/${pieceName}.png`);
+        const pieceMap = {
+          'wK': 'white-king',
+          'wQ': 'white-queen',
+          'wR': 'white-rook',
+          'wB': 'white-bishop',
+          'wN': 'white-knight',
+          'wP': 'white-pawn',
+          'bK': 'black-king',
+          'bQ': 'black-queen',
+          'bR': 'black-rook',
+          'bB': 'black-bishop',
+          'bN': 'black-knight',
+          'bP': 'black-pawn'
+        };
+        const pieceName = pieceMap[piece] || piece;
+        return chrome.runtime.getURL(`libs/pieces/${pieceName}.png`);
           } catch (e) {
             // Fall through to CDN
           }
@@ -595,9 +623,14 @@ async function initializeGame(pgn) {
       
       // Add resize handler to keep board properly sized
       let resizeTimeout;
-      window.addEventListener('resize', () => {
+      const handleResize = () => {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
+          if (board) {
+            // Force board to recalculate size
+            board.resize();
+            // Small delay to ensure CSS has updated
+            setTimeout(() => {
           if (board) {
             board.resize();
             // Redraw arrows after resize
@@ -605,7 +638,16 @@ async function initializeGame(pgn) {
               highlightMove(moves[currentMoveIndex]);
             }
           }
-        }, 150);
+            }, 50);
+          }
+        }, 100);
+      };
+      
+      window.addEventListener('resize', handleResize);
+      
+      // Also listen for orientation changes on mobile
+      window.addEventListener('orientationchange', () => {
+        setTimeout(handleResize, 200);
       });
       
     } catch (err) {
@@ -661,6 +703,9 @@ function setupEventListeners() {
     if (prevBtn) prevBtn.addEventListener('click', previousMove);
     if (nextBtn) nextBtn.addEventListener('click', nextMove);
     if (endBtn) endBtn.addEventListener('click', goToEnd);
+    
+    // Initialize button visibility
+    updatePlayPauseButton();
     
     const flipBtn = document.getElementById('flipBtn');
     if (flipBtn) flipBtn.addEventListener('click', flipBoard);
@@ -842,47 +887,11 @@ async function initializeStockfish() {
       
       console.log('🔧 Loading Stockfish from:', stockfishUrl);
       
-      // First test if workers work at all with a simple test
-      try {
-        const testWorkerUrl = chrome.runtime.getURL('libs/stockfish-test.js');
-        console.log('🧪 Testing worker functionality with:', testWorkerUrl);
-        const testWorker = new Worker(testWorkerUrl);
-        
-        await new Promise((testResolve, testReject) => {
-          const timeout = setTimeout(() => {
-            testWorker.terminate();
-            testReject(new Error('Test worker timeout'));
-          }, 2000);
-          
-          testWorker.onmessage = (e) => {
-            console.log('🧪 Test worker message:', e.data);
-            if (e.data.includes('onmessage handler set')) {
-              clearTimeout(timeout);
-              testWorker.terminate();
-              testResolve();
-            }
-          };
-          
-          testWorker.onerror = (e) => {
-            clearTimeout(timeout);
-            testWorker.terminate();
-            console.error('🧪 Test worker error:', e);
-            testReject(e);
-          };
-        });
-        
-        console.log('✅ Workers are functioning correctly');
-      } catch (testError) {
-        console.error('❌ Workers not functioning:', testError);
-        stockfish = null;
-        updateAnalysisStatus('Workers not available in this context');
-        resolve();
-        return;
-      }
+      // Try to load Stockfish directly (skip test worker since it may not exist)
       
       // Create stockfish worker
       try {
-        stockfish = new Worker(stockfishUrl);
+      stockfish = new Worker(stockfishUrl);
         console.log('✓ Stockfish worker created');
       } catch (workerError) {
         console.error('❌ Worker creation failed:', workerError);
@@ -1081,41 +1090,109 @@ async function analyzeGame() {
     const positionBeforeMove = tempChess.fen();
     const evaluationBefore = await getPositionEvaluation(positionBeforeMove, i);
     
-    // Now make the move
-    tempChess.move(move);
-    
-    // Get quick evaluation after the move to see how position changed
-    // We only need the eval, not the best move (since it's opponent's turn now)
-    const positionAfterMove = tempChess.fen();
-    const evaluationAfter = await getPositionEvaluation(positionAfterMove, i, true); // quickEval = true
-    
-    // Convert best move from UCI to SAN format for comparison
+    // Convert best move from UCI to SAN format
     let bestMoveSAN = null;
+    let bestMoveEval = null; // What the eval would be after the best move
+    
     if (evaluationBefore.bestMove) {
       try {
-        // Create a temporary chess instance to convert UCI to SAN
-        const tempChessForConversion = new window.Chess(positionBeforeMove);
+        // Create a temporary chess instance to convert UCI to SAN and evaluate best move
+        const tempChessForBestMove = new window.Chess(positionBeforeMove);
         const uciMove = evaluationBefore.bestMove;
+        
         // UCI format: "e2e4" or "e7e8q" (with promotion)
-        if (uciMove.length >= 4) {
+        if (uciMove && uciMove.length >= 4 && uciMove !== '0000') {
           const from = uciMove.substring(0, 2);
           const to = uciMove.substring(2, 4);
-          const promotion = uciMove.length > 4 ? uciMove[4] : null;
+          const promotion = uciMove.length > 4 ? uciMove[4].toLowerCase() : null;
           
-          const moveObj = tempChessForConversion.move({
-            from: from,
-            to: to,
-            promotion: promotion || undefined
-          });
-          
-          if (moveObj) {
-            bestMoveSAN = moveObj.san;
+          // Validate squares are valid
+          if (/^[a-h][1-8]$/.test(from) && /^[a-h][1-8]$/.test(to)) {
+            // Get all legal moves to find the matching one
+            const legalMoves = tempChessForBestMove.moves({ verbose: true });
+            const matchingMove = legalMoves.find(m => 
+              m.from === from && 
+              m.to === to && 
+              (!promotion || (m.promotion && m.promotion.toLowerCase() === promotion))
+            );
+            
+            if (matchingMove) {
+              bestMoveSAN = matchingMove.san;
+              
+              // Make the best move and evaluate the resulting position
+              try {
+                tempChessForBestMove.move(matchingMove);
+                const positionAfterBestMove = tempChessForBestMove.fen();
+                bestMoveEval = await getPositionEvaluation(positionAfterBestMove, i, true); // Quick eval
+              } catch (e) {
+                console.warn('Could not evaluate best move position:', e);
+              }
+            } else {
+              // Try making the move directly as fallback
+              try {
+                const moveObj = tempChessForBestMove.move({
+                  from: from,
+                  to: to,
+                  promotion: promotion || undefined
+                });
+                if (moveObj) {
+                  bestMoveSAN = moveObj.san;
+                  const positionAfterBestMove = tempChessForBestMove.fen();
+                  bestMoveEval = await getPositionEvaluation(positionAfterBestMove, i, true);
+                }
+              } catch (moveError) {
+                // Log error details properly
+                const errorMsg = moveError instanceof Error ? moveError.message : String(moveError);
+                console.warn('Invalid best move for position:', {
+                  uciMove: uciMove,
+                  from: from,
+                  to: to,
+                  promotion: promotion,
+                  error: errorMsg,
+                  fen: positionBeforeMove.substring(0, 50) + '...'
+                });
+              }
+            }
           }
         }
       } catch (e) {
-        console.warn('Could not convert best move to SAN:', e);
+        console.warn('Could not convert best move to SAN:', e, 'UCI:', evaluationBefore.bestMove);
         bestMoveSAN = evaluationBefore.bestMove; // Fallback to UCI
       }
+    }
+    
+    // Now make the actual played move
+    tempChess.move(move);
+    
+    // Get evaluation after the played move
+    const positionAfterMove = tempChess.fen();
+    const evaluationAfter = await getPositionEvaluation(positionAfterMove, i, true); // quickEval = true
+    
+    // Determine annotation by comparing best move eval vs played move eval
+    // This is how Lichess does it - compare what the position would be with best move
+    // vs what it actually is with the played move
+    let annotation = '';
+    if (bestMoveEval && evaluationAfter) {
+      const bestCp = bestMoveEval.cp || 0;
+      const playedCp = evaluationAfter.cp || 0;
+      const isWhiteMove = i % 2 === 0;
+      
+      // Calculate eval loss from player's perspective
+      // Stockfish always reports from White's perspective
+      const evalLoss = isWhiteMove ? (bestCp - playedCp) : (playedCp - bestCp);
+      const absLoss = Math.abs(evalLoss);
+      
+      // Lichess-like thresholds (in centipawns)
+      if (absLoss > 200) {
+        annotation = '!!'; // Blunder
+      } else if (absLoss > 100) {
+        annotation = '!'; // Mistake
+      } else if (absLoss > 50) {
+        annotation = '?!'; // Inaccuracy
+      } else if (absLoss < 10 && bestMoveSAN === move.san) {
+        annotation = '!'; // Best move (or very close)
+      }
+      // Otherwise annotation stays empty (good move)
     }
     
     // Combine: bestMove from before (converted to SAN), eval from after
@@ -1126,8 +1203,17 @@ async function analyzeGame() {
       mate: evaluationAfter.mate,
       depth: Math.max(evaluationBefore.depth, evaluationAfter.depth),
       pv: evaluationBefore.pv,
-      annotation: '',
-      moveIndex: i
+      annotation: annotation, // Set based on comparison with best move
+      moveIndex: i,
+      evalLoss: bestMoveEval ? (() => {
+        // Calculate eval loss from player's perspective
+        const bestCp = bestMoveEval.cp || 0;
+        const playedCp = evaluationAfter.cp || 0;
+        const isWhiteMove = i % 2 === 0;
+        // Loss = what you could have had (best) - what you got (played)
+        // Positive = player lost advantage
+        return isWhiteMove ? (bestCp - playedCp) : (playedCp - bestCp);
+      })() : 0 // Store eval loss for commentary
     };
     
     // Update progress
@@ -1223,14 +1309,19 @@ async function analyzeGame() {
     }
   }
   
-  // Generate game summary
-  gameSummary = generateGameSummary(totalMistakes, totalBlunders, totalInaccuracies, openingMoves);
+  // Generate game summary (pass keyMoments for detailed feedback)
+  // Use the actual number of moves analyzed (analysisData.length) to ensure accuracy
+  const analyzedMovesCount = analysisData.length;
+  gameSummary = generateGameSummary(totalMistakes, totalBlunders, totalInaccuracies, openingMoves, keyMoments, analyzedMovesCount);
   
   // Display key moments
   displayKeyMoments();
   
   // Remove loading indicator
   loadingDiv.remove();
+  
+  // Reset to start position to show game summary
+  goToMove(-1);
   
   console.log('✅ Stockfish analysis complete!', {
     moves: moves.length,
@@ -1313,15 +1404,31 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
     let resolved = false;
     
     // For quick eval, we don't need best move or high depth
-    const targetDepth = quickEval ? 8 : 15;
+    // Increased depth for better accuracy matching Lichess
+    const targetDepth = quickEval ? 12 : 20; // Increased from 8/15 to 12/20
     
     const finishAnalysis = (reason) => {
       if (resolved) return;
       resolved = true;
       
+      // Handle mate scores properly - Stockfish reports from White's perspective
+      let finalCp = 0;
+      let finalMate = null;
+      
+      if (evaluation) {
+        if (evaluation.mate !== undefined && evaluation.mate !== null) {
+          // Mate score: positive = White mates, negative = Black mates
+          finalMate = evaluation.mate;
+          // Use large CP value for comparison (1000 centipawns per move)
+          finalCp = evaluation.mate > 0 ? 10000 : -10000;
+        } else if (evaluation.cp !== undefined) {
+          finalCp = evaluation.cp;
+        }
+      }
+      
       const result = { 
-        cp: evaluation?.cp || 0,
-        mate: evaluation?.mate,
+        cp: finalCp,
+        mate: finalMate,
         depth: bestDepth, 
         bestMove: bestMove,
         pv: pv,
@@ -1329,18 +1436,20 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
         moveIndex: moveIndex
       };
       
-      // Compare with previous move to determine annotation
-      if (moveIndex > 0 && analysisData[moveIndex - 1]) {
-        result.annotation = determineAnnotation(analysisData[moveIndex - 1], result, moveIndex);
-      }
+      // Annotation is set during analyzeGame() by comparing best move vs played move
+      // This function is only used for quick evaluations, so annotation stays empty here
       
-      console.log(`📊 Move ${moveIndex + 1} (${reason}): eval=${result.cp !== undefined ? (result.cp / 100).toFixed(2) : 'M' + result.mate} depth=${bestDepth} best=${bestMove || 'none'}`);
+      // Log with proper format
+      const evalStr = finalMate !== null 
+        ? `M${finalMate > 0 ? '+' : ''}${finalMate}` 
+        : `${(finalCp / 100).toFixed(2)}`;
+      console.log(`📊 Move ${moveIndex + 1} (${reason}): eval=${evalStr} depth=${bestDepth} best=${bestMove || 'none'}`);
       resolve(result);
     };
     
     const timeout = setTimeout(() => {
       finishAnalysis('timeout');
-    }, 3000); // 3 second timeout per position
+    }, quickEval ? 4000 : 8000); // Longer timeout for deeper analysis (4s quick, 8s full)
     
     // Create message handler for this analysis
     const handler = (event) => {
@@ -1350,7 +1459,9 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
         // Debug: log info messages
         if (message.startsWith('info') && message.includes('score')) {
           // Parse evaluation from info string
-          const evalMatch = message.match(/score (cp|mate) (-?\d+)/);
+          // Stockfish format: "info depth X score cp Y" or "info depth X score mate Y"
+          // Y can be positive or negative (with or without + sign)
+          const evalMatch = message.match(/score (cp|mate) ([+-]?\d+)/);
           const depthMatch = message.match(/depth (\d+)/);
           const pvMatch = message.match(/ pv (.+)/);
           
@@ -1360,8 +1471,23 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
           }
           
           if (evalMatch) {
+            const scoreType = evalMatch[1];
             const score = parseInt(evalMatch[2]);
-            evaluation = evalMatch[1] === 'mate' ? { mate: score } : { cp: score };
+            
+            if (scoreType === 'mate') {
+              // Mate score: positive = White mates, negative = Black mates
+              // Stockfish reports: mate 5 = White mates in 5, mate -5 = Black mates in 5
+              evaluation = { mate: score };
+            } else {
+              // CP score: positive = White better, negative = Black better
+              // Stockfish always reports from White's perspective
+              evaluation = { cp: score };
+            }
+            
+            // Only update if this is a better depth or we don't have an evaluation yet
+            if (!evaluation || depth >= bestDepth) {
+              // Keep the latest evaluation
+            }
           }
           
           if (pvMatch && !quickEval) {
@@ -1378,8 +1504,8 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
             }
           }
           
-          // Stop when we have enough depth
-          const requiredDepth = quickEval ? 6 : 12;
+          // Stop when we have enough depth - use higher depth for better accuracy (like Lichess)
+          const requiredDepth = quickEval ? 10 : 18; // Increased from 6/12 to 10/18 for better accuracy
           if (depth >= requiredDepth && evaluation) {
             clearTimeout(timeout);
             finishAnalysis('depth reached');
@@ -1388,9 +1514,9 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
           // Engine finished analyzing
           if (!quickEval) {
             // Only extract best move if we're doing full analysis
-            const bestMoveMatch = message.match(/bestmove (\S+)/);
-            if (bestMoveMatch && !bestMove) {
-              bestMove = bestMoveMatch[1];
+          const bestMoveMatch = message.match(/bestmove (\S+)/);
+          if (bestMoveMatch && !bestMove) {
+            bestMove = bestMoveMatch[1];
             }
           }
           clearTimeout(timeout);
@@ -1413,31 +1539,100 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
   });
 }
 
-function determineAnnotation(prevEval, currEval, moveIndex) {
-  const prevCp = prevEval.cp || (prevEval.mate ? (prevEval.mate > 0 ? 1000 : -1000) : 0);
-  const currCp = currEval.cp || (currEval.mate ? (currEval.mate > 0 ? 1000 : -1000) : 0);
+
+// Convert chess notation to spoken form (e.g., "e4" -> "eh-four", "Nf3" -> "knight f three")
+function convertNotationToSpoken(notation) {
+  if (!notation || typeof notation !== 'string') return notation;
   
-  // Calculate evaluation change from the player's perspective
-  // If it's white's move, positive cp is good, negative is bad
-  // If it's black's move, negative cp is good, positive is bad
-  const isWhiteMove = moveIndex % 2 === 0;
+  // Map file letters to spoken form
+  const fileMap = {
+    'a': 'eh', 'b': 'bee', 'c': 'see', 'd': 'dee',
+    'e': 'eh', 'f': 'eff', 'g': 'gee', 'h': 'aitch'
+  };
   
-  // From the player's perspective: did their position get worse?
-  // For white: if cp goes down, that's bad
-  // For black: if cp goes up (less negative), that's bad
-  const evalDiff = isWhiteMove ? (prevCp - currCp) : (currCp - prevCp);
-  const absDiff = Math.abs(evalDiff);
+  // Map piece letters to spoken form
+  const pieceMap = {
+    'K': 'king', 'Q': 'queen', 'R': 'rook',
+    'B': 'bishop', 'N': 'knight', 'P': 'pawn'
+  };
   
-  if (absDiff > 300) {
-    return '!!'; // Blunder - lost significant advantage
-  } else if (absDiff > 150) {
-    return '!'; // Mistake - lost advantage
-  } else if (absDiff > 75) {
-    return '?!'; // Inaccuracy - small loss
-  } else if (absDiff < 30 && evalDiff < -50) {
-    return '!'; // Best move - gained advantage
+  let spoken = notation;
+  
+  // Handle castling
+  if (notation === 'O-O' || notation === 'O-O-O') {
+    return notation === 'O-O' ? 'castles kingside' : 'castles queenside';
   }
-  return ''; // Good move
+  
+  // Handle simple file+rank moves (e.g., e4, d5) - most common case, check first
+  const simpleMoveMatch = notation.match(/^([a-h])([1-8])([+#]?)$/);
+  if (simpleMoveMatch) {
+    const [, file, rank, suffix] = simpleMoveMatch;
+    const fileSpoken = fileMap[file.toLowerCase()] || file;
+    let result = `${fileSpoken}-${rank}`;
+    if (suffix === '+') result += ' check';
+    if (suffix === '#') result += ' checkmate';
+    return result;
+  }
+  
+  // Handle piece moves (e.g., Nf3, Bc4, Qd1)
+  // Pattern: [Piece][file][rank] or [Piece][file][rank][capture/promotion/check]
+  const pieceMoveMatch = notation.match(/^([KQRBN])([a-h])([1-8])([x+#=]?.*)?$/);
+  if (pieceMoveMatch) {
+    const [, piece, file, rank, suffix] = pieceMoveMatch;
+    const pieceName = pieceMap[piece] || piece;
+    const fileSpoken = fileMap[file.toLowerCase()] || file;
+    let result = `${pieceName} ${fileSpoken} ${rank}`;
+    
+    // Handle suffix (captures, checks, promotions)
+    if (suffix) {
+      if (suffix.includes('x')) result += ' takes';
+      if (suffix.includes('+')) result += ' check';
+      if (suffix.includes('#')) result += ' checkmate';
+      if (suffix.includes('=')) {
+        const promoMatch = suffix.match(/=([QRBN])/);
+        if (promoMatch) {
+          const promoPiece = pieceMap[promoMatch[1]] || promoMatch[1];
+          result += ` promotes to ${promoPiece}`;
+        }
+      }
+    }
+    return result;
+  }
+  
+  // Handle pawn captures (e.g., exd5, e8=Q) - must have 'x' for capture
+  const pawnCaptureMatch = notation.match(/^([a-h])x([a-h])([1-8])([=+#]?.*)?$/);
+  if (pawnCaptureMatch) {
+    const [, fromFile, toFile, rank, suffix] = pawnCaptureMatch;
+    const fromFileSpoken = fileMap[fromFile.toLowerCase()] || fromFile;
+    const toFileSpoken = fileMap[toFile.toLowerCase()] || toFile;
+    let result = `${fromFileSpoken} takes ${toFileSpoken} ${rank}`;
+    if (suffix) {
+      if (suffix.includes('+')) result += ' check';
+      if (suffix.includes('#')) result += ' checkmate';
+      if (suffix.includes('=')) {
+        const promoMatch = suffix.match(/=([QRBN])/);
+        if (promoMatch) {
+          const promoPiece = pieceMap[promoMatch[1]] || promoMatch[1];
+          result += ` promotes to ${promoPiece}`;
+        }
+      }
+    }
+    return result;
+  }
+  
+  // Fallback: return as-is if we can't parse it
+  return notation;
+}
+
+// Apply notation conversion to commentary text
+function convertCommentaryNotation(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Find chess notation patterns (e.g., e4, Nf3, exd5, O-O)
+  // Pattern: word boundary, then notation, then word boundary or punctuation
+  return text.replace(/\b([KQRBN]?[a-h]?x?[a-h][1-8][+#=]?[QRBN]?|O-O-O?)\b/g, (match) => {
+    return convertNotationToSpoken(match);
+  });
 }
 
 function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
@@ -1456,7 +1651,12 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
   const currentCp = evaluation.cp || 0;
   const prevCp = prevEval ? (prevEval.cp || 0) : 0;
   const evalChange = currentCp - prevCp;
-  const evalLoss = isWhite ? -evalChange : evalChange; // Positive = player lost advantage
+  
+  // Use the evalLoss stored during analysis (compares best move vs played move)
+  // This is the correct way - compares what position would be with best move vs actual position
+  const evalLoss = evaluation.evalLoss !== undefined 
+    ? Math.abs(evaluation.evalLoss) 
+    : Math.abs(isWhite ? -evalChange : evalChange); // Fallback to old calculation
   
   // Get piece name for better readability
   const getPieceName = (p) => {
@@ -1464,38 +1664,202 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
     return names[p.toLowerCase()] || p;
   };
   
-  // Opening phase commentary
+  // Opening phase commentary - match voice script style with variations
   if (moveIndex < 10) {
     if (moveIndex === 0) {
-      commentary = `${player} opens with ${move.san}. `;
+      const openingPhrases = [
+        `${player} opens with ${move.san} - `,
+        `${player} plays ${move.san}. `,
+        `Here's ${move.san}. `,
+        `${move.san} - ${player} makes the first move. `,
+        `And we're off! ${player} opens with ${move.san}. `,
+        `Here we go! ${move.san}. `
+      ];
+      commentary = openingPhrases[Math.floor(Math.random() * openingPhrases.length)];
+      
+      // Add opening-specific commentary with variations
+      if (move.san === 'e4') {
+        const e4Comments = [
+          "The King's Pawn opening. Classic, aggressive, and sets the tone for an open game. ",
+          "The King's Pawn. Classic and aggressive. ",
+          "King's Pawn opening - going for an open game. "
+        ];
+        commentary += e4Comments[Math.floor(Math.random() * e4Comments.length)];
+      } else if (move.san === 'd4') {
+        const d4Comments = [
+          "The Queen's Pawn opening. Solid and positional. ",
+          "Queen's Pawn - solid and positional. ",
+          "The Queen's Pawn. A solid choice. "
+        ];
+        commentary += d4Comments[Math.floor(Math.random() * d4Comments.length)];
+      } else if (move.san === 'Nf3') {
+        const nf3Comments = [
+          "Developing with tempo. ",
+          "Knight to f3, developing with tempo. ",
+          "Nf3 - developing with tempo. "
+        ];
+        commentary += nf3Comments[Math.floor(Math.random() * nf3Comments.length)];
+      } else if (move.san === 'c4') {
+        const c4Comments = [
+          "The English Opening. ",
+          "English Opening. ",
+          "c4 - the English. "
+        ];
+        commentary += c4Comments[Math.floor(Math.random() * c4Comments.length)];
+      }
     } else if (moveIndex < 6) {
       const pieceName = getPieceName(move.piece);
-      if (move.piece === 'p') {
-        commentary = `${player} plays ${move.san}, advancing a pawn to control the center. `;
-      } else {
-        commentary = `${player} plays ${move.san}, developing the ${pieceName} to an active square. `;
+      const openingComments = [
+        `${player} plays ${move.san}, developing the ${pieceName}. `,
+        `${move.san}. The ${pieceName} enters the game. `,
+        `${player} brings out the ${pieceName} with ${move.san}. `,
+        `${move.san}. ${player} activates the ${pieceName}. `,
+        `${move.san} - developing the ${pieceName}. `,
+        `${player} develops with ${move.san}. `
+      ];
+      commentary = openingComments[Math.floor(Math.random() * openingComments.length)];
+      
+      // Add specific opening commentary with variations
+      if (moveIndex === 1 && move.san === 'e5') {
+        const e5Comments = [
+          "We're looking at a symmetrical position here. Both sides fighting for central control. ",
+          "Symmetrical position. Both sides fighting for the center. ",
+          "e5 - mirroring White's central push. "
+        ];
+        commentary += e5Comments[Math.floor(Math.random() * e5Comments.length)];
+      } else if (move.san === 'c5') {
+        const c5Comments = [
+          "There's the Sicilian Defense. Black refuses to mirror White and creates an asymmetrical fight. ",
+          "The Sicilian Defense. Creating an asymmetrical fight. ",
+          "c5 - the Sicilian. Black goes for an unbalanced position. "
+        ];
+        commentary += c5Comments[Math.floor(Math.random() * c5Comments.length)];
+      } else if (move.san === 'Bc4') {
+        const bc4Comments = [
+          "Bishop to c4, eyeing that f7 square - always a sensitive spot in the opening. ",
+          "Bc4 - targeting f7, that weak square. ",
+          "Bishop to c4. That f7 square is always a target. "
+        ];
+        commentary += bc4Comments[Math.floor(Math.random() * bc4Comments.length)];
       }
     }
   }
   
-  // Tactical commentary first
+  // Tactical commentary - match voice script style with notation and variations
   if (move.san.includes('#')) {
-    return `Checkmate! ${player} delivers the final blow with ${move.san}. Game over!`;
+    const checkmatePhrases = [
+      `Checkmate! ${move.san}! The queen and bishop combine for a beautiful finish. What a finish!`,
+      `Checkmate! ${move.san}! That's the game!`,
+      `${move.san}! Checkmate! Game over!`,
+      `Checkmate on ${move.san}! What a finish!`,
+      `Boom! Checkmate! ${move.san}! `,
+      `${move.san}! Checkmate! ${player} delivers the final blow!`,
+      `Checkmate! ${move.san}! Beautiful finish!`,
+      `${move.san}! That's checkmate! Game over!`
+    ];
+    return checkmatePhrases[Math.floor(Math.random() * checkmatePhrases.length)];
   }
   
   if (move.captured) {
     const capturedPiece = getPieceName(move.captured);
-    commentary += `${player} captures the ${capturedPiece} on ${move.to}. `;
+    const capturePhrases = [
+      `${move.san}! ${player} takes the ${capturedPiece}. `,
+      `${move.san}. That ${capturedPiece} is gone. `,
+      `${player} captures with ${move.san}. `,
+      `${move.san} - takes the ${capturedPiece}. `,
+      `Oh! ${move.san}! That's a capture. `,
+      `${move.san}. Captures the ${capturedPiece}. `,
+      `${player} snatches the ${capturedPiece} with ${move.san}. `,
+      `${move.san}! Takes the ${capturedPiece} on ${move.to}. `
+    ];
+    commentary += capturePhrases[Math.floor(Math.random() * capturePhrases.length)];
+    
+    // Special capture commentary with variations
+    if (move.san.includes('xf7') || move.san.includes('xf2')) {
+      const sacrificeComments = [
+        "That's a sacrifice! Giving up material for a devastating attack. ",
+        "Oh! That's a sacrifice! He's giving up the piece for a devastating attack. ",
+        "Sacrifice! Trading material for a strong attack. ",
+        "Bold sacrifice! Going all-in on the attack. ",
+        "Oh! Knight takes on f7! That's a sacrifice! "
+      ];
+      commentary += sacrificeComments[Math.floor(Math.random() * sacrificeComments.length)];
+    } else if (move.captured === 'q') {
+      const queenCaptureComments = [
+        "That's the queen! Huge trade. ",
+        "Takes the queen! That's massive. ",
+        "Queen capture! That changes everything. "
+      ];
+      commentary += queenCaptureComments[Math.floor(Math.random() * queenCaptureComments.length)];
+    }
+  }
+  
+  // Detect tactical patterns - forks, pins, discovered attacks (from voice script)
+  // Simple pattern matching based on move characteristics
+  if (move.piece === 'n' && evaluation.annotation === '!' && evalLoss < 50) {
+    // Knight fork potential - good knight move might be a fork
+    if (Math.random() < 0.25) { // 25% chance
+      const forkComments = [
+        `Double attack! The knight forks multiple pieces. Something's gotta give. `,
+        `Fork! The knight attacks multiple targets. `,
+        `${move.san}! The knight forks the king and another piece. `,
+        `Nice fork! The knight is attacking multiple pieces. `
+      ];
+      commentary += forkComments[Math.floor(Math.random() * forkComments.length)];
+    }
+  }
+  
+  // Check for pins (bishop moves to g5/g4 area - common pinning squares)
+  if (move.piece === 'b' && (move.san.includes('g5') || move.san.includes('g4') || move.san.includes('Bg5') || move.san.includes('Bg4'))) {
+    if (Math.random() < 0.4) { // 40% chance
+      const pinComments = [
+        `Bishop to ${move.to}, pinning a piece. `,
+        `${move.san}! Pinning the knight to the queen. Black can't move that piece without losing material. `,
+        `Bishop to ${move.to} - creating a pin. `,
+        `Brilliant move! ${move.san} - pinning the knight. `
+      ];
+      commentary += pinComments[Math.floor(Math.random() * pinComments.length)];
+    }
+  }
+  
+  // Check for discovered attacks (piece moves revealing check)
+  if ((move.piece === 'b' || move.piece === 'r' || move.piece === 'q') && move.san.includes('+')) {
+    if (Math.random() < 0.5) { // 50% chance
+      const discoveredComments = [
+        `Discovered check! The ${getPieceName(move.piece)} moves and BAM - another piece delivers check. `,
+        `Discovered check! ${move.san} opens up a line. `,
+        `${move.san}! Discovered check! That's gonna cost material. `
+      ];
+      commentary += discoveredComments[Math.floor(Math.random() * discoveredComments.length)];
+    }
   }
   
   if (move.san.includes('+')) {
-    commentary += `${player} delivers check! `;
+    const checkPhrases = [
+      `${move.san}! Check! The king is in serious trouble now. `,
+      `Check! ${move.san}. Black's king is under attack. `,
+      `${move.san}! Check! Things are heating up. `,
+      `Check on ${move.san}! `,
+      `${move.san}! Check! The king is in danger. `,
+      `Check! ${move.san}. The king can't stay there. `,
+      `${move.san}! Check! ${player} puts the king in danger! `
+    ];
+    commentary += checkPhrases[Math.floor(Math.random() * checkPhrases.length)];
   }
   
-  // Castling
+  // Castling - match voice script with variations
   if (move.san === 'O-O' || move.san === 'O-O-O') {
     const side = move.san === 'O-O' ? 'kingside' : 'queenside';
-    commentary += `${player} castles ${side}, securing the king and connecting the rooks. `;
+    const castlingPhrases = [
+      `${move.san}. Castle ${side}. The king finds safety and the rooks are connected now. `,
+      `${player} castles ${side} with ${move.san}. Essential to get the king safe. `,
+      `Castle ${side}. ${move.san}. The king gets cozy. `,
+      `${move.san}. Castling ${side} - smart defensive move. `,
+      `${move.san}. Castle ${side}. Securing the king and connecting the rooks. `,
+      `Castling ${side} with ${move.san}. The king finds safety. `,
+      `${move.san} - castle ${side}. King safety and rook activation. `
+    ];
+    commentary += castlingPhrases[Math.floor(Math.random() * castlingPhrases.length)];
   }
   
   // Analyze the move quality with detailed feedback
@@ -1506,52 +1870,243 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
     !/^\d+\.?$/.test(bestMove) &&
     !['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove);
   
+  // Move quality commentary - match voice script style with notation
   if (evaluation.annotation === '!!') {
-    // Blunder - use beginner-friendly language
-    commentary += `Oops! This is a blunder - a serious mistake that really hurts the position. `;
+    // Blunder - match voice script phrases
+    const blunderPhrases = [
+      `Oh no. ${move.san} is a blunder. `,
+      `Yikes. ${move.san} - that's a blunder. `,
+      `Ouch. ${move.san} - that's going to cost ${player.toLowerCase()} dearly. `,
+      `${move.san}. That's a rough one - a critical error. `
+    ];
+    commentary += blunderPhrases[Math.floor(Math.random() * blunderPhrases.length)];
+    
+    // Add specific blunder commentary
+    if (evalLoss > 500) {
+      commentary += "He just hung a piece. Completely undefended. ";
+    } else if (evaluation.mate && evaluation.mate < 0) {
+      commentary += "Wait, that's checkmate in a few moves. I don't think he saw that coming. ";
+    }
+    
     if (hasBetterMove) {
-      commentary += `${bestMove} would have been much better here. `;
+      const betterPhrases = [
+        `Should've played ${bestMove} instead. `,
+        `${bestMove} would have been much better here. `,
+        `The engine says ${bestMove} was the move to play. `,
+        `${bestMove} would have kept things solid. `
+      ];
+      commentary += betterPhrases[Math.floor(Math.random() * betterPhrases.length)];
       commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
   } else if (evaluation.annotation === '!') {
-    // Could be mistake or best move depending on context
-    if (evalLoss > 100) {
-      commentary += `This is a mistake that gives the opponent an advantage. `;
+    // This is a mistake (annotation '!' means mistake, not best move)
+    // Never give positive feedback on mistakes
+    const mistakePhrases = [
+      `Mistake! ${move.san} loses material. `,
+      `${move.san}. That's a mistake that gives the opponent an advantage. `,
+      `Hmm, ${move.san} - that's not ideal. `,
+      `${move.san}. That move lets the opponent back in the game. `,
+      `Mistake! ${move.san} loses a full piece. `,
+      `${move.san}. That's a mistake - should've played something else. `,
+      `Not the best. ${move.san} gives the opponent chances. `
+    ];
+    commentary += mistakePhrases[Math.floor(Math.random() * mistakePhrases.length)];
       if (hasBetterMove) {
-        commentary += `${bestMove} was the stronger choice. `;
+      const betterMistakePhrases = [
+        `${bestMove} would have been stronger. `,
+        `Should've played ${bestMove} instead. `,
+        `${bestMove} was the better choice. `
+      ];
+      commentary += betterMistakePhrases[Math.floor(Math.random() * betterMistakePhrases.length)];
         commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
-      }
-    } else {
-      commentary += `Nice move! ${player} finds an excellent continuation. `;
     }
   } else if (evaluation.annotation === '?!') {
-    // Inaccuracy - beginner-friendly
-    commentary += `This move is okay, but not the best. `;
+    // Inaccuracy - match voice script
+    const inaccuracyPhrases = [
+      `Ooh, ${move.san} - that's an inaccuracy. `,
+      `${move.san}. That's okay, but not perfect. `,
+      `Hmm, ${move.san} - not sure about that one. `,
+      `${move.san}. Decent move, though there was something better. `
+    ];
+    commentary += inaccuracyPhrases[Math.floor(Math.random() * inaccuracyPhrases.length)];
+    
+    // Add specific inaccuracy commentary
+    if (move.piece === 'n' && (move.to[0] === 'a' || move.to[0] === 'h')) {
+      commentary += "Knight on the rim is dim. ";
+    }
+    
     if (hasBetterMove) {
       commentary += `${bestMove} would have been more precise. `;
       commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
-  } else if (hasBetterMove && Math.abs(evalLoss) > 30) {
-    // Slight inaccuracy that doesn't trigger annotation
-    commentary += `A reasonable move. ${bestMove} was slightly better. `;
+  } else if (hasBetterMove && evalLoss > 20) {
+    // There's a better move - only say "pretty good" if loss is very small
+    if (evalLoss < 50) {
+      commentary += `${move.san}. Pretty good, though ${bestMove} was slightly better. `;
+    } else {
+      // Larger loss, should have been caught by annotation
+      commentary += `${move.san}. ${bestMove} would have been better. `;
+    }
+  } else {
+    // Good move - only give positive feedback if it's actually the best move or very close
+    const isBestMove = bestMove && bestMove === move.san;
+    const isVeryClose = bestMove && evalLoss < 10;
+    
+    if (isBestMove || isVeryClose) {
+      // Only give positive feedback on actually good moves
+      const naturalPhrases = [
+        `${move.san}. `,
+        `${move.san}. Nice. `,
+        `${move.san}. Solid. `,
+        `${move.san}. That's the move. `,
+        `${move.san}. Good. `
+      ];
+      if (!commentary.trim()) {
+        commentary = naturalPhrases[Math.floor(Math.random() * naturalPhrases.length)];
+      }
+    } else {
+      // Just state the move without praise
+      if (!commentary.trim()) {
+        commentary = `${move.san}. `;
+      }
+    }
   }
   
-  // Position assessment - beginner-friendly language
+  // Position assessment - match voice script style with eval numbers and variations
   const cp = evaluation.cp || 0;
-  if (Math.abs(cp) > 500) {
+  const absCp = Math.abs(cp);
+  const evalDisplay = (cp / 100).toFixed(1);
+  
+  if (absCp > 500) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} is completely winning here. `;
-  } else if (Math.abs(cp) > 300) {
+    const sign = cp > 0 ? '+' : '';
+    const winningPhrases = [
+      `The computer says this is ${sign}${evalDisplay} for ${leading}. `,
+      `${leading} is absolutely crushing here - ${sign}${evalDisplay}. `,
+      `This is ${sign}${evalDisplay} for ${leading}. They're dominating. `,
+      `${leading} has this in the bag at ${sign}${evalDisplay}. `,
+      `Plus ${evalDisplay} for ${leading}. They're running away with this. `,
+      `${sign}${evalDisplay} for ${leading}. This is looking really good. `,
+      `The computer says ${sign}${evalDisplay} for ${leading}, but honestly, it's not easy to convert. `
+    ];
+    commentary += winningPhrases[Math.floor(Math.random() * winningPhrases.length)];
+  } else if (absCp > 300) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} has a big advantage. `;
-  } else if (Math.abs(cp) > 150) {
+    const sign = cp > 0 ? '+' : '';
+    const advantagePhrases = [
+      `${leading} has a nice advantage here - ${sign}${evalDisplay}. `,
+      `The position is ${sign}${evalDisplay} for ${leading}. `,
+      `${leading} is in great shape at ${sign}${evalDisplay}. `,
+      `Things are looking good for ${leading.toLowerCase()} - ${sign}${evalDisplay}. `,
+      `Plus ${evalDisplay} for ${leading}. Nice advantage. `,
+      `${sign}${evalDisplay} for ${leading}. They're ahead and pressing. `
+    ];
+    commentary += advantagePhrases[Math.floor(Math.random() * advantagePhrases.length)];
+  } else if (absCp > 150) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} is doing better. `;
-  } else if (Math.abs(cp) < 50) {
-    commentary += `The game is pretty even. `;
+    const sign = cp > 0 ? '+' : '';
+    const betterPhrases = [
+      `${leading} has a slight edge - ${sign}${evalDisplay}. `,
+      `The position is ${sign}${evalDisplay} for ${leading}. `,
+      `${leading} is doing a bit better at ${sign}${evalDisplay}. `,
+      `Plus ${evalDisplay} for ${leading}. Small advantage. `,
+      `${sign}${evalDisplay} for ${leading}. Slight edge. `
+    ];
+    commentary += betterPhrases[Math.floor(Math.random() * betterPhrases.length)];
+  } else if (absCp < 50) {
+    // Even positions - match voice script with variations
+    const evenPhrases = [
+      `Dead equal at 0.0. `,
+      `The position is balanced - both sides have chances. `,
+      `Things are pretty equal here. `,
+      `Both players are holding their own. `,
+      `The battle is still wide open! `,
+      `It's anyone's game at this point. `,
+      `Roughly equal. Both sides have chances. `,
+      `The position is pretty balanced. `,
+      `Dead equal. Interesting position. `
+    ];
+    // Only add position assessment if we don't have much commentary yet
+    if (commentary.length < 50) {
+      commentary += evenPhrases[Math.floor(Math.random() * evenPhrases.length)];
+    }
   }
   
-  return commentary.trim() || `${player} plays ${move.san}.`;
+  // Add move number context occasionally with variations
+  if (moveIndex > 20 && (moveIndex % 10 === 0 || Math.random() < 0.2)) {
+    const moveNumberPhrases = [
+      `Move ${moveIndex + 1}. `,
+      `We're at move ${moveIndex + 1}. `,
+      `Move ${moveIndex + 1} now. `,
+      `This is move ${moveIndex + 1}. `
+    ];
+    commentary += moveNumberPhrases[Math.floor(Math.random() * moveNumberPhrases.length)];
+  }
+  
+  // Add natural filler phrases occasionally - match voice script
+  if (Math.random() < 0.2 && commentary.length < 80) {
+    const fillerPhrases = [
+      "Let's see what happens here. ",
+      "Now this is where it gets interesting. ",
+      "Okay okay okay. ",
+      "Here we go. ",
+      "And there's the idea. ",
+      "Let's see what he does here. ",
+      "Alright, so... ",
+      "Now this is interesting. ",
+      "Here's the idea. ",
+      "And there it is. ",
+      "Saw that coming. ",
+      "Wait, what? ",
+      "There it is. "
+    ];
+    commentary += fillerPhrases[Math.floor(Math.random() * fillerPhrases.length)];
+  }
+  
+  // Add endgame commentary for later moves - match voice script
+  if (moveIndex > 40) {
+    const endgameComments = [
+      "We're down to a rook endgame. This is where technique really matters. ",
+      "We're in the endgame now. ",
+      "This is the endgame. Technique really matters here. ",
+      "Endgame phase. Every move counts. ",
+      "Down to the endgame. ",
+      "It's a race now. Both sides pushing passed pawns. ",
+      "This is a theoretically drawn position, but it's easy to go wrong. "
+    ];
+    if (Math.random() < 0.15 && commentary.length < 60) {
+      commentary += endgameComments[Math.floor(Math.random() * endgameComments.length)];
+    }
+  }
+  
+  // Add positional commentary occasionally - match voice script
+  if (moveIndex > 15 && Math.random() < 0.1 && commentary.length < 70) {
+    const positionalComments = [
+      "This is a closed position. Both sides are gonna have to maneuver carefully. ",
+      "The position is getting complex. ",
+      "Things are getting tactical. ",
+      "The position is opening up. ",
+      "This is a typical Sicilian structure. White gets kingside chances, Black fights on the queenside. ",
+      "White has the bishop pair, but Black's knights are well-placed. "
+    ];
+    commentary += positionalComments[Math.floor(Math.random() * positionalComments.length)];
+  }
+  
+  // Fallback - natural phrases from script with variations
+  if (!commentary.trim()) {
+    const fallbackPhrases = [
+      `${move.san}. `,
+      `${move.san}. Let's see what happens. `,
+      `${move.san}. Here we go. `,
+      `${move.san}. Now this is where it gets interesting. `,
+      `${move.san}. Alright, so... `,
+      `${move.san}. Okay. `,
+      `${move.san}. And there's the idea. `
+    ];
+    commentary = fallbackPhrases[Math.floor(Math.random() * fallbackPhrases.length)];
+  }
+  
+  return commentary.trim();
 }
 
 function explainBestMoveDetailed(bestMove, playedMove, evaluation, prevEval) {
@@ -1586,44 +2141,77 @@ function explainBestMoveDetailed(bestMove, playedMove, evaluation, prevEval) {
 }
 
 
-function generateGameSummary(mistakes, blunders, inaccuracies, openingMoves) {
+function generateGameSummary(mistakes, blunders, inaccuracies, openingMoves, keyMoments = [], analyzedMovesCount = null) {
   const totalErrors = mistakes + blunders + inaccuracies;
+  
+  // Use analyzed moves count if provided, otherwise fall back to moves.length
+  // Convert half-moves to full moves: e4 e5 = 1 full move (not 2)
+  // Round up since games can end on either player's turn
+  const moveCount = analyzedMovesCount !== null ? analyzedMovesCount : moves.length;
+  const fullMoves = Math.ceil(moveCount / 2);
   
   let summary = '';
   
-  // Game length context
-  if (moves.length < 30) {
-    summary += `This was a quick ${moves.length} move game. `;
-  } else if (moves.length > 60) {
-    summary += `This was a long battle with ${moves.length} moves. `;
+  // Game length context - use full moves for display
+  if (fullMoves < 30) {
+    summary += `This was a quick ${fullMoves} move game. `;
+  } else if (fullMoves > 60) {
+    summary += `This was a long battle with ${fullMoves} moves. `;
   } else {
-    summary += `This ${moves.length} move game had some interesting moments. `;
+    summary += `This ${fullMoves} move game had some interesting moments. `;
   }
   
-  // Error summary - beginner friendly
-  if (totalErrors === 0) {
-    summary += 'Both players made solid moves throughout! ';
-  } else if (blunders > 0) {
-    summary += `There ${blunders === 1 ? 'was' : 'were'} ${blunders} big mistake${blunders > 1 ? 's' : ''} that really mattered. `;
-  } else if (mistakes > 0) {
-    summary += `There ${mistakes === 1 ? 'was' : 'were'} ${mistakes} mistake${mistakes > 1 ? 's' : ''} to learn from. `;
-  } else if (inaccuracies > 0) {
-    summary += `Just ${inaccuracies} small inaccurac${inaccuracies === 1 ? 'y' : 'ies'} - pretty clean play! `;
+  // What went well - brilliant moves
+  const brilliantMoves = keyMoments.filter(m => m.type === 'brilliant');
+  if (brilliantMoves.length > 0) {
+    summary += `You played ${brilliantMoves.length} excellent move${brilliantMoves.length > 1 ? 's' : ''} that the engine really liked. `;
   }
   
-  // Encouragement
-  if (totalErrors <= 3) {
-    summary += "Great game! ";
-  } else if (blunders <= 1) {
-    summary += "Good effort! ";
+  // Opening assessment
+  if (openingMoves >= 15 && inaccuracies <= 2) {
+    summary += 'You handled the opening well. ';
+  } else if (openingMoves < 10) {
+    summary += 'The game ended quickly, so the opening phase was brief. ';
   }
   
-  // Key moments
+  // What went wrong - detailed feedback
   if (blunders > 0) {
-    summary += `Watch out for blunders - you had ${blunders} critical mistake${blunders > 1 ? 's' : ''}. `;
+    const blunderMoments = keyMoments.filter(m => m.type === 'blunder');
+    if (blunderMoments.length > 0) {
+      const firstBlunder = blunderMoments[0];
+      summary += `The biggest issue was around move ${firstBlunder.moveIndex + 1} where ${firstBlunder.player.toLowerCase()} made a critical blunder. `;
+      if (firstBlunder.bestMove) {
+        summary += `${firstBlunder.bestMove} would have been much better. `;
+      }
+  } else {
+      summary += `You had ${blunders} major blunder${blunders > 1 ? 's' : ''} that really hurt your position. `;
+    }
+  } else if (mistakes > 0) {
+    summary += `You made ${mistakes} mistake${mistakes > 1 ? 's' : ''} that gave your opponent chances. `;
+  } else if (inaccuracies > 0) {
+    summary += `Just ${inaccuracies} small inaccurac${inaccuracies === 1 ? 'y' : 'ies'} - pretty clean play overall! `;
+  } else {
+    summary += 'Both players made solid moves throughout! ';
   }
   
-  return summary;
+  // Turning points
+  const turningPoints = keyMoments.filter(m => m.type === 'turning-point');
+  if (turningPoints.length > 0) {
+    summary += `There ${turningPoints.length === 1 ? 'was' : 'were'} ${turningPoints.length} major turning point${turningPoints.length > 1 ? 's' : ''} where the game shifted. `;
+  }
+  
+  // Overall assessment
+  if (totalErrors === 0) {
+    summary += 'Excellent game with no major errors! ';
+  } else if (totalErrors <= 2 && blunders === 0) {
+    summary += 'Overall, this was a strong performance. ';
+  } else if (blunders <= 1 && mistakes <= 2) {
+    summary += 'With a bit more care, this could have been even better. ';
+  } else {
+    summary += 'Focus on avoiding those critical mistakes next time. ';
+  }
+  
+  return summary.trim();
 }
 
 function updateMoveAnnotation(moveIndex, evaluation) {
@@ -1773,7 +2361,29 @@ function displayGameMeta(headers) {
     metaInfo.push(headers.Result);
   }
   
-  metaEl.textContent = metaInfo.join(' • ');
+  // Get game URL from Site or GameId header
+  let gameUrl = null;
+  if (headers.Site) {
+    // Extract URL from Site header (e.g., "https://lichess.org/WlCDfwJH")
+    const urlMatch = headers.Site.match(/https?:\/\/lichess\.org\/([a-zA-Z0-9]+)/);
+    if (urlMatch) {
+      gameUrl = urlMatch[0];
+    }
+  } else if (headers.GameId) {
+    // Use GameId to construct URL
+    gameUrl = `https://lichess.org/${headers.GameId}`;
+  }
+  
+  // Create the metadata display
+  const metaText = metaInfo.join(' • ');
+  
+  if (gameUrl) {
+    // Create a link to the game
+    metaEl.innerHTML = `<a href="${gameUrl}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: underline; cursor: pointer;">${metaText}</a>`;
+  } else {
+    // No URL available, just show text
+    metaEl.textContent = metaText;
+  }
 }
 
 function resetToStart() {
@@ -1785,8 +2395,16 @@ function resetToStart() {
   updateEvaluation(0);
 }
 
-function goToMove(index) {
+async function goToMove(index, isAutoPlay = false) {
   if (index < -1 || index >= moves.length) return;
+  
+  // Stop any currently playing audio/speech (unless auto-playing)
+  if (!isAutoPlay) {
+    stopCurrentAudio();
+  } else {
+    // For auto-play, just stop current audio but don't pause playback
+    stopCurrentAudio();
+  }
   
   // Reset exploration mode
   isExploringLine = false;
@@ -1814,20 +2432,33 @@ function goToMove(index) {
   if (index >= 0 && analysisData[index]) {
     const eval = analysisData[index];
     const cp = eval.cp || 0;
+    const mate = eval.mate !== undefined ? eval.mate : null;
     // Use the evaluation after this move (which is stored in analysisData[index])
-    updateEvaluation(cp, true);
-    console.log(`📊 Move ${index + 1}: Updating eval bar to ${cp}cp (${(cp/100).toFixed(1)})`);
+    updateEvaluation(cp, true, mate);
+    const evalStr = mate !== null ? `M${mate > 0 ? '+' : ''}${mate}` : `${(cp/100).toFixed(1)}`;
+    console.log(`📊 Move ${index + 1}: Updating eval bar to ${evalStr}`);
   } else if (index === -1) {
     // Starting position - equal
     updateEvaluation(0, false);
+    // Show game summary when at start
+    displayGameSummary();
   } else {
     // Move not analyzed yet
     updateEvaluation(0, false);
   }
   
-  // Speak the move
+  // Update move analysis panel
+  updateMoveAnalysisPanel(index);
+  
+  // Speak the move - await if in auto-play mode to ensure speech completes
   if (voiceEnabled && synth) {
+    if (isAutoPlay) {
+      // In auto-play mode, wait for speech to complete
+      await speakMoveWithAnalysis(index);
+    } else {
+      // In manual mode, don't wait (user can navigate freely)
     speakMoveWithAnalysis(index);
+    }
   }
 }
 
@@ -2017,6 +2648,12 @@ function updateMoveHighlight() {
 }
 
 function updateMoveAnalysisPanel(moveIndex) {
+  // Handle start position - show game summary
+  if (moveIndex === -1) {
+    displayGameSummary();
+    return;
+  }
+  
   const move = moves[moveIndex];
   const analysis = analysisData[moveIndex];
   const commentary = moveCommentary[moveIndex];
@@ -2056,15 +2693,27 @@ function updateMoveAnalysisPanel(moveIndex) {
   textEl.textContent = commentary || `${player} plays ${move.san}`;
   
   // Evaluation - update both the panel and the side bar
-  if (analysis && analysis.cp !== undefined) {
-    const cp = analysis.cp; // Keep in centipawns for updateEvaluation
-    const displayCp = cp / 100; // Convert to pawns for display
-    evalEl.textContent = displayCp > 0 ? `+${displayCp.toFixed(1)}` : displayCp.toFixed(1);
-    evalEl.className = 'analysis-eval' + (displayCp > 1 ? ' winning' : displayCp < -1 ? ' losing' : '');
-    evalEl.style.display = 'block';
+  if (analysis) {
+    const mate = analysis.mate !== undefined && analysis.mate !== null ? analysis.mate : null;
+    const cp = analysis.cp !== undefined ? analysis.cp : 0;
     
-    // Also update the evaluation bar on the side
-    updateEvaluation(cp, true);
+    if (mate !== null) {
+      // Mate score
+      evalEl.textContent = `M${mate > 0 ? '+' : ''}${mate}`;
+      evalEl.className = 'analysis-eval' + (mate > 0 ? ' winning' : ' losing');
+    evalEl.style.display = 'block';
+      updateEvaluation(cp, true, mate);
+    } else if (analysis.cp !== undefined) {
+      // CP score
+      const displayCp = cp / 100; // Convert to pawns for display
+      evalEl.textContent = displayCp > 0 ? `+${displayCp.toFixed(1)}` : displayCp.toFixed(1);
+      evalEl.className = 'analysis-eval' + (displayCp > 1 ? ' winning' : displayCp < -1 ? ' losing' : '');
+      evalEl.style.display = 'block';
+      updateEvaluation(cp, true);
+  } else {
+    evalEl.style.display = 'none';
+      updateEvaluation(0, false);
+    }
   } else {
     evalEl.style.display = 'none';
     // Reset eval bar if no analysis
@@ -2095,15 +2744,26 @@ function resetMoveAnalysisPanel() {
   if (hintEl) hintEl.style.display = 'none';
 }
 
-function updateEvaluation(cp, isFromStockfish = true) {
+function updateEvaluation(cp, isFromStockfish = true, mate = null) {
   const evalBar = document.getElementById('evalBar');
   const evalText = document.getElementById('evalText');
   
-  if (!evalBar || !evalText) return;
+  if (!evalBar || !evalText) {
+    console.warn('⚠️ Eval bar elements not found:', { evalBar: !!evalBar, evalText: !!evalText });
+    return;
+  }
   
+  // Handle mate scores - Stockfish reports from White's perspective
+  let evalStr;
+  if (mate !== null && mate !== undefined) {
+    // Mate score: M+5 = White mates in 5, M-5 = Black mates in 5
+    evalStr = `M${mate > 0 ? '+' : ''}${mate}`;
+  } else {
   // Convert centipawns to display value
+    // Stockfish reports from White's perspective: positive = White better
   const displayValue = cp / 100;
-  const evalStr = displayValue > 0 ? `+${displayValue.toFixed(1)}` : displayValue.toFixed(1);
+    evalStr = displayValue > 0 ? `+${displayValue.toFixed(1)}` : displayValue.toFixed(1);
+  }
   
   // Show Stockfish indicator if this is a real Stockfish evaluation
   if (isFromStockfish && stockfish) {
@@ -2118,48 +2778,124 @@ function updateEvaluation(cp, isFromStockfish = true) {
   
   // Vertical bar: white at bottom (100% = all white), black at top (0% = all black)
   // 50% is equal position
+  // For mate positions, use extreme values
+  let clampedCp = cp;
+  if (mate !== null && mate !== undefined) {
+    // Mate positions: use extreme CP values for visualization
+    clampedCp = mate > 0 ? 1000 : -1000;
+  } else {
   // Clamp cp to reasonable range (-1000 to +1000 centipawns)
-  const clampedCp = Math.max(-1000, Math.min(1000, cp));
+    clampedCp = Math.max(-1000, Math.min(1000, cp));
+  }
   
   // Convert to percentage: +1000cp = 100% white, -1000cp = 0% white (100% black)
+  // Stockfish reports from White's perspective, so this is correct
   const whitePercentage = 50 + (clampedCp / 20); // 50% base, ±50% for ±1000cp
   
   // White fills from bottom up
-  evalBar.style.height = `${Math.max(0, Math.min(100, whitePercentage))}%`;
+  const clampedPercentage = Math.max(0, Math.min(100, whitePercentage));
+  evalBar.style.height = `${clampedPercentage}%`;
   evalBar.style.bottom = '0';
   evalBar.style.top = 'auto';
-  evalBar.className = 'eval-fill-vertical';
+  evalBar.className = 'eval-fill'; // Keep the CSS class name
+  
+  // Debug log to verify updates
+  console.log(`📊 Eval bar updated: cp=${cp}, mate=${mate}, percentage=${clampedPercentage.toFixed(1)}%`);
 }
 
-function playMoves() {
+async function playMoves() {
   if (isPlaying) return;
   
   isPlaying = true;
+  updatePlayPauseButton();
   
   // Speak intro summary if starting from beginning
   if (currentMoveIndex === -1 && gameSummary) {
-    speakGameIntro();
+    await speakGameIntro();
+    // Wait a bit after intro finishes before starting moves
+    await new Promise(resolve => setTimeout(resolve, 1000));
   }
   
-  playInterval = setInterval(() => {
-    if (currentMoveIndex < moves.length - 1) {
-      nextMove();
-    } else {
-      stopMoves();
-    }
-  }, 2000);
+  // Check if still playing after intro
+  if (!isPlaying) return;
   
-  // Play first move if at start
-  if (currentMoveIndex === -1) {
-    // Delay first move to let intro finish
-    setTimeout(() => {
-      if (isPlaying) nextMove();
-    }, gameSummary ? 3000 : 0);
+  // Play moves sequentially, waiting for each to complete
+  playNextMove();
+}
+
+async function playNextMove() {
+  // Check if we should continue playing
+  if (!isPlaying) return;
+  
+  // Check if there are more moves
+  if (currentMoveIndex >= moves.length - 1) {
+      stopMoves();
+    return;
+  }
+  
+  // Advance to next move - this will await speech completion in auto-play mode
+  const nextIndex = currentMoveIndex + 1;
+  await goToMove(nextIndex, true); // true = auto-play mode, await to ensure speech completes
+  
+  // Small pause after speech before next move
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  // Continue to next move if still playing
+  if (isPlaying) {
+    playNextMove();
+  }
+}
+
+async function waitForSpeechToComplete() {
+  // Wait for ElevenLabs speech to complete
+  if (currentSpeechPromise) {
+    try {
+      await currentSpeechPromise;
+    } catch (e) {
+      // Speech was cancelled or failed, continue anyway
+    }
+  }
+  
+  // Wait for Google TTS audio to complete
+  if (currentAudio) {
+    await new Promise((resolve) => {
+      if (currentAudio) {
+        currentAudio.onended = resolve;
+        currentAudio.onerror = resolve;
+        // If already ended, resolve immediately
+        if (currentAudio.ended) {
+          resolve();
+        }
+      } else {
+        resolve();
+      }
+    });
+  }
+  
+  // Wait for browser TTS to complete
+  if (synth && synth.speaking) {
+    await new Promise((resolve) => {
+      const checkSpeaking = setInterval(() => {
+        if (!synth.speaking) {
+          clearInterval(checkSpeaking);
+          resolve();
+        }
+      }, 100);
+      
+      // Timeout after 10 seconds to prevent infinite waiting
+      setTimeout(() => {
+        clearInterval(checkSpeaking);
+        resolve();
+      }, 10000);
+    });
   }
 }
 
 async function speakGameIntro() {
   if (!gameSummary || !voiceEnabled) return;
+  
+  // Stop any current audio first
+  stopCurrentAudio();
   
   // Create a friendly game intro
   let intro = "Let's review this game! ";
@@ -2168,9 +2904,24 @@ async function speakGameIntro() {
   // Try ElevenLabs first
   if (typeof window.speakWithElevenLabs === 'function') {
     try {
-      const success = await window.speakWithElevenLabs(intro);
-      if (success) return;
+      const speechPromise = window.speakWithElevenLabs(intro);
+      currentSpeechPromise = speechPromise;
+      const success = await speechPromise;
+      currentSpeechPromise = null;
+      
+      // Check if we moved away from start position
+      if (currentMoveIndex !== -1) {
+        console.log('⚠️ Moved away from start during intro');
+        return;
+      }
+      
+      if (success) {
+        // Wait a bit after speech finishes to ensure it's done
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return;
+      }
     } catch (e) {
+      currentSpeechPromise = null;
       console.log('ElevenLabs intro failed, using fallback');
     }
   }
@@ -2181,7 +2932,17 @@ async function speakGameIntro() {
     const utterance = new SpeechSynthesisUtterance(intro);
     utterance.voice = selectedVoice;
     utterance.rate = 1.0;
-    synth.speak(utterance);
+    
+    // Wait for speech to finish
+    await new Promise((resolve) => {
+      utterance.onend = () => {
+        setTimeout(resolve, 500); // Small pause after speech
+      };
+      utterance.onerror = () => {
+        setTimeout(resolve, 500);
+      };
+      synth.speak(utterance);
+    });
   }
 }
 
@@ -2191,11 +2952,28 @@ function pauseMoves() {
     clearInterval(playInterval);
     playInterval = null;
   }
+  updatePlayPauseButton();
+}
+
+function updatePlayPauseButton() {
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  
+  if (playBtn && pauseBtn) {
+    if (isPlaying) {
+      playBtn.style.display = 'none';
+      pauseBtn.style.display = 'inline-block';
+    } else {
+      playBtn.style.display = 'inline-block';
+      pauseBtn.style.display = 'none';
+    }
+  }
 }
 
 function stopMoves() {
   pauseMoves();
   resetToStart();
+  updatePlayPauseButton();
 }
 
 function flipBoard() {
@@ -2238,14 +3016,62 @@ function previousMove() {
 }
 
 function nextMove() {
+  // If playing, just pause and go to next
+  // If not playing, just go to next without pausing
+  if (isPlaying) {
   pauseMoves();
+  }
   if (currentMoveIndex < moves.length - 1) {
     goToMove(currentMoveIndex + 1);
   }
 }
 
+// Stop any currently playing audio
+function stopCurrentAudio() {
+  // Stop ElevenLabs audio if playing
+  if (typeof window !== 'undefined' && window.currentElevenLabsAudio) {
+    try {
+      window.currentElevenLabsAudio.pause();
+      window.currentElevenLabsAudio.currentTime = 0;
+      if (window.currentElevenLabsAudio.src && window.currentElevenLabsAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(window.currentElevenLabsAudio.src);
+      }
+      window.currentElevenLabsAudio = null;
+    } catch (e) {
+      console.warn('Error stopping ElevenLabs audio:', e);
+    }
+  }
+  
+  // Stop Google TTS audio if playing
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      if (currentAudio.src && currentAudio.src.startsWith('blob:')) {
+        URL.revokeObjectURL(currentAudio.src);
+      }
+      currentAudio = null;
+    } catch (e) {
+      console.warn('Error stopping Google TTS audio:', e);
+    }
+  }
+  
+  // Cancel speech synthesis
+  if (synth && synth.speaking) {
+    synth.cancel();
+  }
+  
+  // Cancel any pending speech promise
+  if (currentSpeechPromise) {
+    currentSpeechPromise = null;
+  }
+}
+
 async function speakMoveWithAnalysis(moveIndex) {
   if (moveIndex < 0 || moveIndex >= moves.length) return;
+  
+  // Stop any previous audio before starting new one
+  stopCurrentAudio();
   
   const move = moves[moveIndex];
   
@@ -2294,7 +3120,17 @@ async function speakMoveWithAnalysis(moveIndex) {
   if (typeof window.speakWithElevenLabs === 'function') {
     try {
       console.log('🎙️ Attempting to speak with ElevenLabs...');
-      const success = await window.speakWithElevenLabs(text);
+      const speechPromise = window.speakWithElevenLabs(text);
+      currentSpeechPromise = speechPromise;
+      const success = await speechPromise;
+      currentSpeechPromise = null;
+      
+      // Check if we were interrupted
+      if (currentMoveIndex !== moveIndex) {
+        console.log('⚠️ Move changed during speech, stopping');
+        return;
+      }
+      
       if (success) {
         console.log('✅ Spoke with ElevenLabs (premium voice)');
         return;
@@ -2302,6 +3138,7 @@ async function speakMoveWithAnalysis(moveIndex) {
         console.warn('⚠️ ElevenLabs returned false, trying fallback');
       }
     } catch (error) {
+      currentSpeechPromise = null;
       console.error('❌ ElevenLabs error:', error.message);
       console.error('Full error:', error);
       console.log('💡 Falling back to browser TTS');
@@ -2310,9 +3147,22 @@ async function speakMoveWithAnalysis(moveIndex) {
     console.warn('⚠️ speakWithElevenLabs function not available, using fallback');
   }
   
+  // Check if we were interrupted before trying fallback
+  if (currentMoveIndex !== moveIndex) {
+    console.log('⚠️ Move changed, stopping fallback');
+    return;
+  }
+  
   // Fallback to Google TTS
   if (useGoogleTTS) {
     const success = await speakWithGoogleTTS(text);
+    
+    // Check if we were interrupted
+    if (currentMoveIndex !== moveIndex) {
+      console.log('⚠️ Move changed during Google TTS');
+      return;
+    }
+    
     if (success) {
       console.log('Spoke with Google TTS (masculine voice)');
       return;

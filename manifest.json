@@ -42,7 +42,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "cloudflare-secrets.js", "secrets.js", "libs/*", "libs/pieces/*", "libs/stockfish-test.js"],
+      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "cloudflare-secrets.js", "secrets.js", "libs/*", "libs/pieces/*"],
       "matches": ["<all_urls>"]
     }
   ],

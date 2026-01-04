@@ -4,16 +4,11 @@ This extension can also be deployed as a standalone web app on your website.
 
 ## Web App Files
 
-### Main Web App (Recommended)
+### Main Web App
 - **`index.html`** - Main web app entry point (uses same UI as extension)
-- **`analysis-web.js`** - Web version of analysis script (67KB, full featured)
+- **`analysis-web.js`** - Web version of analysis script (full featured)
 - Uses the same beautiful UI as the extension
 - Supports all features: Stockfish analysis, voice, move playback
-
-### Alternative Web App (Simpler)
-- **`web-version.html`** - Simpler web version
-- **`web-analysis.js`** - Simpler analysis script (16KB)
-- Basic functionality, uses CDN libraries
 
 ## Deployment Options
 
@@ -31,8 +26,8 @@ This extension can also be deployed as a standalone web app on your website.
    - Root directory: `/`
 
 3. **Files needed for web app:**
-   - `index.html` (or `web-version.html`)
-   - `analysis-web.js` (or `web-analysis.js`)
+   - `index.html`
+   - `analysis-web.js`
    - `analysis.css`
    - `libs/` directory (all chess libraries)
    - `icons/` directory (optional)
@@ -52,9 +47,7 @@ This extension can also be deployed as a standalone web app on your website.
    icons/
    ```
 
-2. **For CDN version (web-version.html):**
-   - Uses CDN for libraries (no libs/ folder needed)
-   - Just upload: `web-version.html`, `web-analysis.js`, `analysis.css`
+2. **Note:** The web app uses local libraries from the `libs/` folder for best performance.
 
 ### Option 3: Direct File Upload
 
@@ -114,7 +107,6 @@ The web app can use the same Cloudflare Worker for secrets, or you can:
 
 - **No automatic game detection** - User must paste PGN manually
 - **No Lichess integration** - Works with any PGN
-- **Uses CDN libraries** - No need for local libs/ folder (if using web-version.html)
 - **No Chrome storage** - Uses localStorage or URL params
 
 ## Recommended Setup
