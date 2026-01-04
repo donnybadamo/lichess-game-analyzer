@@ -1,12 +1,17 @@
 // Load libraries using extension URLs for CSP compliance
-const loadScript = (src) => {
+const loadScript = (src, optional = false) => {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL(src);
     script.onload = resolve;
     script.onerror = () => {
-      console.error('Failed to load:', src);
-      reject(new Error(`Failed to load ${src}`));
+      if (optional) {
+        console.log(`Optional script not found: ${src}`);
+        resolve(); // Resolve instead of reject for optional scripts
+      } else {
+        console.error('Failed to load:', src);
+        reject(new Error(`Failed to load ${src}`));
+      }
     };
     document.head.appendChild(script);
   });
@@ -111,19 +116,51 @@ loadScript('libs/jquery.min.js').then(() => {
   }
   console.log('✓ Chessboard verified:', typeof window.Chessboard);
   
-  // Load Cloudflare secrets integration
-  console.log('Loading Cloudflare secrets integration...');
-  return loadScript('cloudflare-secrets.js');
-}).then(() => {
-  console.log('✓ Cloudflare secrets integration loaded');
-  
-  // Load credentials from Cloudflare Worker (non-blocking)
-  if (typeof window.loadElevenLabsCredentials === 'function') {
-    window.loadElevenLabsCredentials().catch(err => {
-      console.warn('⚠️ Cloudflare Worker not configured or unavailable:', err.message);
-      console.log('💡 Extension will work with manually set credentials in Chrome storage');
+  // Load secrets from file (secrets.js) if it exists (optional)
+  return loadScript('secrets.js', true).then(() => {
+    // If secrets.js was loaded, store them in Chrome storage
+    if (typeof window.ELEVENLABS_SECRETS !== 'undefined' && window.ELEVENLABS_SECRETS) {
+      const secrets = window.ELEVENLABS_SECRETS;
+      if (secrets.apiKey && secrets.apiKey !== 'sk_your_api_key_here') {
+        console.log('🔐 Loading secrets from secrets.js file...');
+        const credentials = { elevenlabsApiKey: secrets.apiKey };
+        if (secrets.agentId && secrets.agentId !== 'your_agent_id_here') {
+          credentials.elevenlabsAgentId = secrets.agentId;
+        }
+        if (secrets.voiceId && secrets.voiceId !== 'your_voice_id_here') {
+          credentials.elevenlabsVoiceId = secrets.voiceId;
+        }
+        chrome.storage.local.set(credentials).then(() => {
+          console.log('✅ Secrets loaded from secrets.js and stored in Chrome storage');
+        });
+      } else {
+        console.log('💡 secrets.js found but contains placeholder values - using Chrome storage');
+      }
+    }
+    
+    // Load Cloudflare secrets integration (optional - only if Worker URL is set)
+    return chrome.storage.local.get(['cloudflareWorkerUrl']).then(storage => {
+      if (storage.cloudflareWorkerUrl) {
+        console.log('Loading Cloudflare secrets integration (optional)...');
+        return loadScript('cloudflare-secrets.js').then(() => {
+          console.log('✓ Cloudflare secrets integration loaded');
+          // Try to load credentials from Cloudflare Worker (non-blocking)
+          if (typeof window.loadElevenLabsCredentials === 'function') {
+            window.loadElevenLabsCredentials().catch(err => {
+              console.warn('⚠️ Cloudflare Worker not available:', err.message);
+              console.log('💡 Using local credentials from Chrome storage instead');
+            });
+          }
+        }).catch(err => {
+          console.warn('⚠️ Could not load Cloudflare secrets integration:', err.message);
+          console.log('💡 Extension will use local credentials from Chrome storage');
+        });
+      } else {
+        console.log('💡 Using local credentials from Chrome storage or secrets.js');
+      }
     });
-  }
+  });
+}).then(() => {
   
   // Load ElevenLabs TTS script
   console.log('Loading ElevenLabs TTS...');

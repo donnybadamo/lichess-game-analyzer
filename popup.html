@@ -4,13 +4,22 @@
   <meta charset="UTF-8">
   <style>
     body {
-      width: 300px;
+      width: 350px;
       padding: 20px;
       font-family: Arial, sans-serif;
+      font-size: 13px;
     }
     h2 {
       margin-top: 0;
       color: #333;
+      font-size: 18px;
+    }
+    h3 {
+      margin: 15px 0 10px 0;
+      color: #555;
+      font-size: 14px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
     }
     button {
       width: 100%;
@@ -21,9 +30,17 @@
       border-radius: 4px;
       cursor: pointer;
       font-size: 14px;
+      margin-top: 5px;
     }
     button:hover {
       background-color: #45a049;
+    }
+    button.secondary {
+      background-color: #2196F3;
+      margin-top: 10px;
+    }
+    button.secondary:hover {
+      background-color: #0b7dda;
     }
     .status {
       margin-top: 10px;
@@ -31,6 +48,42 @@
       background-color: #f0f0f0;
       border-radius: 4px;
       font-size: 12px;
+      min-height: 20px;
+    }
+    .status.success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status.error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 12px;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 12px;
+      color: #555;
+    }
+    .section {
+      margin-top: 15px;
+      padding-top: 15px;
+      border-top: 1px solid #eee;
+    }
+    .help-text {
+      font-size: 11px;
+      color: #666;
+      margin-top: -5px;
+      margin-bottom: 10px;
     }
   </style>
 </head>
@@ -38,6 +91,25 @@
   <h2>Lichess Game Analyzer</h2>
   <button id="analyzeBtn">Analyze Current Game</button>
   <div class="status" id="status"></div>
+  
+  <div class="section">
+    <h3>ElevenLabs Voice Settings</h3>
+    <label for="apiKey">API Key:</label>
+    <input type="password" id="apiKey" placeholder="sk_...">
+    <div class="help-text">Get from elevenlabs.com</div>
+    
+    <label for="agentId">Agent ID (optional):</label>
+    <input type="text" id="agentId" placeholder="Agent ID">
+    <div class="help-text">For agent-based voices</div>
+    
+    <label for="voiceId">Voice ID (optional):</label>
+    <input type="text" id="voiceId" placeholder="Voice ID">
+    <div class="help-text">Override default voice</div>
+    
+    <button id="saveSecretsBtn" class="secondary">Save Credentials</button>
+    <div class="status" id="secretsStatus"></div>
+  </div>
+  
   <script src="popup.js"></script>
 </body>
 </html>

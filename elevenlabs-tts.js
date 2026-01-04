@@ -155,9 +155,9 @@ async function speakWithElevenLabs(text) {
     
     if (!apiKey) {
       console.error('❌ ElevenLabs API key not set!');
-      console.log('💡 Credentials should load automatically from Cloudflare Worker');
+      console.log('💡 Set your API key in the extension popup');
       console.log('💡 Or set manually: chrome.storage.local.set({ elevenlabsApiKey: "sk_..." })');
-      console.log('💡 Make sure Cloudflare Worker URL is configured');
+      console.log('💡 Also set: elevenlabsAgentId (optional) and elevenlabsVoiceId (optional)');
       return false;
     }
     

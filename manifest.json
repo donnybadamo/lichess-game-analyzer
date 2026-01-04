@@ -42,12 +42,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "cloudflare-secrets.js", "libs/*", "libs/pieces/*"],
+      "resources": ["analysis.html", "analysis.js", "analysis.css", "init.js", "load-libs.js", "elevenlabs-tts.js", "cloudflare-secrets.js", "secrets.js", "libs/*", "libs/pieces/*", "libs/stockfish-test.js"],
       "matches": ["<all_urls>"]
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self' https://api.elevenlabs.io https://texttospeech.googleapis.com https://*.workers.dev"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'; default-src 'self'; connect-src 'self' https://api.elevenlabs.io https://texttospeech.googleapis.com https://*.workers.dev https://cdn.jsdelivr.net https://unpkg.com"
   }
 }
 

@@ -8,6 +8,7 @@
   let gameEndDetected = false;
   let lastGameId = null;
   let analysisButtonAdded = false;
+  let userDismissedOverlay = false; // Prevents auto-open after user closes
 
   // Function to extract game data from Lichess page
   function extractGameData() {
@@ -83,6 +84,15 @@
       console.error('Error extracting game data:', error);
       return null;
     }
+  }
+
+  // Function to check if we're on an analysis page (with /white or /black in URL)
+  function isAnalysisPage() {
+    const pathname = window.location.pathname;
+    // Check if URL ends with /white or /black (analysis pages)
+    return /\/[a-zA-Z0-9]{8}\/(white|black)$/.test(pathname) ||
+           /\/analysis\/[a-zA-Z0-9]{8}/.test(pathname) ||
+           /\/review\/[a-zA-Z0-9]{8}/.test(pathname);
   }
 
   // Function to check if we're on a game page (finished or review)
@@ -172,7 +182,8 @@
   // Function to open analysis page as overlay
   async function openAnalysisPage(gameData, force = false) {
     // Allow forced analysis (for manual triggers)
-    if (!force && gameEndDetected) return;
+    // Skip auto-open if user already dismissed or already detected
+    if (!force && (gameEndDetected || userDismissedOverlay)) return;
     gameEndDetected = true;
 
     let pgn = null;
@@ -263,7 +274,7 @@
     });
     closeBtn.addEventListener('click', () => {
       overlay.remove();
-      gameEndDetected = false; // Allow re-opening
+      userDismissedOverlay = true; // Prevent auto-reopening
     });
 
     // Create iframe to load analysis page
@@ -287,7 +298,7 @@
     const handleEscape = (e) => {
       if (e.key === 'Escape') {
         overlay.remove();
-        gameEndDetected = false;
+        userDismissedOverlay = true; // Prevent auto-reopening
         document.removeEventListener('keydown', handleEscape);
       }
     };
@@ -297,7 +308,7 @@
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         overlay.remove();
-        gameEndDetected = false;
+        userDismissedOverlay = true; // Prevent auto-reopening
       }
     });
 
@@ -309,7 +320,7 @@
     const overlay = document.getElementById('lichess-analyzer-overlay');
     if (overlay) {
       overlay.remove();
-      gameEndDetected = false;
+      userDismissedOverlay = true; // Prevent auto-reopening
     }
   };
 
@@ -457,10 +468,10 @@
     analysisButtonAdded = true;
   }
 
-  // Monitor for game pages and add analysis button
+  // Monitor for analysis pages and add analysis button
   function monitorGamePage() {
-    if (isGamePage()) {
-      // Add analysis button for manual analysis
+    if (isAnalysisPage()) {
+      // Add analysis button only on analysis pages (/white or /black URLs)
       setTimeout(() => {
         addAnalysisButton();
       }, 1000);
@@ -544,6 +555,7 @@
     if (url !== lastUrl) {
       lastUrl = url;
       gameEndDetected = false; // Reset for new game
+      userDismissedOverlay = false; // Reset dismiss flag for new game
       analysisButtonAdded = false; // Reset button flag
       console.log('URL changed, monitoring game page...');
       setTimeout(monitorGamePage, 500);
@@ -552,22 +564,13 @@
   
   urlObserver.observe(document, { subtree: true, childList: true });
 
-  // Watch for DOM changes (game end indicators appearing)
+  // Watch for DOM changes (only to add button on analysis pages, never auto-open)
   const domObserver = new MutationObserver(() => {
-    if (isGamePage()) {
+    if (isAnalysisPage()) {
       if (!analysisButtonAdded) {
         setTimeout(addAnalysisButton, 500);
       }
-      // Check if game just ended
-      if (!gameEndDetected && checkGameEnded()) {
-        console.log('Game end detected via DOM change');
-        setTimeout(() => {
-          const gameData = extractGameData();
-          if (gameData) {
-            openAnalysisPage(gameData);
-          }
-        }, 1000);
-      }
+      // No auto-open - user must click button to analyze
     }
   });
   

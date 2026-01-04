@@ -8,9 +8,6 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♟️</text></svg>">
   <link rel="stylesheet" href="analysis.css">
   <link rel="stylesheet" href="libs/chessboard.css">
-  
-  <!-- Load jQuery first -->
-  <script src="libs/jquery.min.js"></script>
 </head>
 <body>
   <!-- Site Header -->
@@ -128,31 +125,43 @@
   </div>
 
   <!-- Load libraries and app -->
-  <script src="libs/chessboard.min.js"></script>
-  <script type="module">
-    // Load Chess.js ESM module
-    import { Chess } from './libs/chess-esm.js';
-    window.Chess = Chess;
-    console.log('✓ Chess.js loaded');
+  <script>
+    // Load libraries in order for web app
+    const loadScript = (src) => {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
     
-    // Verify all libraries
-    if (typeof window.$ === 'undefined') {
-      console.error('jQuery not loaded');
-    } else {
-      console.log('✓ jQuery loaded');
-    }
-    
-    if (typeof window.Chessboard === 'undefined') {
-      console.error('Chessboard not loaded');
-    } else {
-      console.log('✓ Chessboard loaded');
-    }
-    
-    // Load the main analysis script
-    const script = document.createElement('script');
-    script.src = 'analysis-web.js';
-    script.onerror = () => console.error('Failed to load analysis-web.js');
-    document.body.appendChild(script);
+    // Load jQuery first
+    loadScript('libs/jquery.min.js')
+      .then(() => {
+        console.log('✓ jQuery loaded');
+        // Load Chess.js ESM module
+        return import('./libs/chess-esm.js');
+      })
+      .then(chessModule => {
+        window.Chess = chessModule.Chess;
+        console.log('✓ Chess.js loaded');
+        // Load Chessboard
+        return loadScript('libs/chessboard.min.js');
+      })
+      .then(() => {
+        console.log('✓ Chessboard loaded');
+        // Load the main analysis script
+        return loadScript('analysis-web.js');
+      })
+      .then(() => {
+        console.log('✓ Analysis script loaded');
+      })
+      .catch(err => {
+        console.error('Error loading libraries:', err);
+        document.body.innerHTML = '<div style="padding: 40px; text-align: center; color: white;"><h2>Error Loading</h2><p>Could not load required libraries.</p><p style="color: #ff6b35;">' + err.message + '</p></div>';
+      });
   </script>
 </body>
 </html>

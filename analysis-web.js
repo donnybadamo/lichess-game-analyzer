@@ -959,14 +959,66 @@ async function analyzeGame() {
   
   for (let i = 0; i < moves.length; i++) {
     const move = moves[i];
+    
+    // CRITICAL: Analyze position BEFORE making the move
+    // This gives us the best move for the player whose turn it is
+    const positionBeforeMove = tempChess.fen();
+    const evaluationBefore = await getPositionEvaluation(positionBeforeMove, i);
+    
+    // Now make the move
     tempChess.move(move);
+    
+    // Get quick evaluation after the move to see how position changed
+    // We only need the eval, not the best move (since it's opponent's turn now)
+    const positionAfterMove = tempChess.fen();
+    const evaluationAfter = await getPositionEvaluation(positionAfterMove, i, true); // quickEval = true
+    
+    // Convert best move from UCI to SAN format for comparison
+    let bestMoveSAN = null;
+    if (evaluationBefore.bestMove) {
+      try {
+        // Create a temporary chess instance to convert UCI to SAN
+        const tempChessForConversion = new window.Chess(positionBeforeMove);
+        const uciMove = evaluationBefore.bestMove;
+        // UCI format: "e2e4" or "e7e8q" (with promotion)
+        if (uciMove.length >= 4) {
+          const from = uciMove.substring(0, 2);
+          const to = uciMove.substring(2, 4);
+          const promotion = uciMove.length > 4 ? uciMove[4] : null;
+          
+          const moveObj = tempChessForConversion.move({
+            from: from,
+            to: to,
+            promotion: promotion || undefined
+          });
+          
+          if (moveObj) {
+            bestMoveSAN = moveObj.san;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not convert best move to SAN:', e);
+        bestMoveSAN = evaluationBefore.bestMove; // Fallback to UCI
+      }
+    }
+    
+    // Combine: bestMove from before (converted to SAN), eval from after
+    const evaluation = {
+      ...evaluationAfter,
+      bestMove: bestMoveSAN, // Best move for the player who just moved (in SAN format)
+      cp: evaluationAfter.cp, // Position evaluation after the move
+      mate: evaluationAfter.mate,
+      depth: Math.max(evaluationBefore.depth, evaluationAfter.depth),
+      pv: evaluationBefore.pv,
+      annotation: '',
+      moveIndex: i
+    };
     
     // Update progress
     const progress = Math.round(((i + 1) / moves.length) * 100);
     updateAnalysisStatus(`🔬 Stockfish analyzing: ${i + 1}/${moves.length} (${progress}%)`);
     
-    // Analyze position
-    const evaluation = await getPositionEvaluation(tempChess.fen(), i);
+    // Store evaluation
     analysisData[i] = evaluation;
     
     // Generate commentary for this move
@@ -1006,7 +1058,7 @@ async function analyzeGame() {
         evalBefore: prevEvalForMoments,
         evalAfter: currentCp,
         bestMove: evaluation.bestMove,
-        description: `${player} makes a mistake with ${move.san}. Position shifts by ${(evalSwing/100).toFixed(1)} pawns.`
+        description: `${player} makes a mistake with ${move.san} that changes the game.`
       });
     } else if (evalSwing > 200 && i > 0) {
       // Major turning point
@@ -1130,7 +1182,7 @@ function getKeyMomentLabel(type) {
   }
 }
 
-async function getPositionEvaluation(fen, moveIndex) {
+async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
   if (!stockfish) {
     console.warn('⚠️ Stockfish not available for evaluation');
     return { cp: 0, depth: 0, bestMove: null, annotation: '', moveIndex: moveIndex };
@@ -1143,6 +1195,9 @@ async function getPositionEvaluation(fen, moveIndex) {
     let bestDepth = 0;
     let pv = [];
     let resolved = false;
+    
+    // For quick eval, we don't need best move or high depth
+    const targetDepth = quickEval ? 8 : 15;
     
     const finishAnalysis = (reason) => {
       if (resolved) return;
@@ -1193,7 +1248,8 @@ async function getPositionEvaluation(fen, moveIndex) {
             evaluation = evalMatch[1] === 'mate' ? { mate: score } : { cp: score };
           }
           
-          if (pvMatch) {
+          if (pvMatch && !quickEval) {
+            // Only extract best move if we're doing full analysis
             // Split PV and filter out move numbers and game results
             pv = pvMatch[1].split(' ').filter(move => {
               if (/^\d+\.?$/.test(move)) return false;
@@ -1207,15 +1263,19 @@ async function getPositionEvaluation(fen, moveIndex) {
           }
           
           // Stop when we have enough depth
-          if (depth >= 12 && evaluation) {
+          const requiredDepth = quickEval ? 6 : 12;
+          if (depth >= requiredDepth && evaluation) {
             clearTimeout(timeout);
             finishAnalysis('depth reached');
           }
         } else if (message.startsWith('bestmove')) {
           // Engine finished analyzing
-          const bestMoveMatch = message.match(/bestmove (\S+)/);
-          if (bestMoveMatch && !bestMove) {
-            bestMove = bestMoveMatch[1];
+          if (!quickEval) {
+            // Only extract best move if we're doing full analysis
+            const bestMoveMatch = message.match(/bestmove (\S+)/);
+            if (bestMoveMatch && !bestMove) {
+              bestMove = bestMoveMatch[1];
+            }
           }
           clearTimeout(timeout);
           finishAnalysis('bestmove');
@@ -1229,7 +1289,7 @@ async function getPositionEvaluation(fen, moveIndex) {
     // Stop any previous analysis and start new one
     stockfish.postMessage('stop');
     stockfish.postMessage(`position fen ${fen}`);
-    stockfish.postMessage('go depth 15');
+    stockfish.postMessage(`go depth ${targetDepth}`);
     
     if (moveIndex % 10 === 0 || moveIndex === 0) {
       console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 30)}...`);
@@ -1331,49 +1391,48 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
     !['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove);
   
   if (evaluation.annotation === '!!') {
-    // Blunder
-    const lostPawns = Math.abs(evalLoss / 100).toFixed(1);
-    commentary += `Blunder! This move loses ${lostPawns} pawns worth of advantage. `;
+    // Blunder - use beginner-friendly language
+    commentary += `Oops! This is a blunder - a serious mistake that really hurts the position. `;
     if (hasBetterMove) {
-      commentary += `Instead, ${bestMove} was much stronger. `;
+      commentary += `${bestMove} would have been much better here. `;
       commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
   } else if (evaluation.annotation === '!') {
     // Could be mistake or best move depending on context
     if (evalLoss > 100) {
-      const lostPawns = (evalLoss / 100).toFixed(1);
-      commentary += `Mistake. This cost about ${lostPawns} pawns of advantage. `;
+      commentary += `This is a mistake that gives the opponent an advantage. `;
       if (hasBetterMove) {
-        commentary += `The better move was ${bestMove}. `;
+        commentary += `${bestMove} was the stronger choice. `;
         commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
       }
     } else {
-      commentary += `Strong move! ${player} finds an excellent continuation. `;
+      commentary += `Nice move! ${player} finds an excellent continuation. `;
     }
   } else if (evaluation.annotation === '?!') {
-    // Inaccuracy
-    const lostPawns = (Math.abs(evalLoss) / 100).toFixed(1);
-    commentary += `Inaccuracy. This move isn't optimal, costing about ${lostPawns} pawns. `;
+    // Inaccuracy - beginner-friendly
+    commentary += `This move is okay, but not the best. `;
     if (hasBetterMove) {
-      commentary += `Better was ${bestMove}. `;
+      commentary += `${bestMove} would have been more precise. `;
       commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
   } else if (hasBetterMove && Math.abs(evalLoss) > 30) {
     // Slight inaccuracy that doesn't trigger annotation
-    commentary += `A reasonable move, but ${bestMove} was slightly more accurate. `;
+    commentary += `A reasonable move. ${bestMove} was slightly better. `;
   }
   
-  // Position assessment
+  // Position assessment - beginner-friendly language
   const cp = evaluation.cp || 0;
-  const evalDisplay = (Math.abs(cp) / 100).toFixed(1);
-  if (Math.abs(cp) > 300) {
+  if (Math.abs(cp) > 500) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} is winning with a +${evalDisplay} advantage. `;
+    commentary += `${leading} is completely winning here. `;
+  } else if (Math.abs(cp) > 300) {
+    const leading = cp > 0 ? 'White' : 'Black';
+    commentary += `${leading} has a big advantage. `;
   } else if (Math.abs(cp) > 150) {
     const leading = cp > 0 ? 'White' : 'Black';
-    commentary += `${leading} has a clear advantage (+${evalDisplay}). `;
-  } else if (Math.abs(cp) < 30) {
-    commentary += `The position is roughly equal. `;
+    commentary += `${leading} is doing better. `;
+  } else if (Math.abs(cp) < 50) {
+    commentary += `The game is pretty even. `;
   }
   
   return commentary.trim() || `${player} plays ${move.san}.`;
@@ -1413,39 +1472,34 @@ function explainBestMoveDetailed(bestMove, playedMove, evaluation, prevEval) {
 
 function generateGameSummary(mistakes, blunders, inaccuracies, openingMoves) {
   const totalErrors = mistakes + blunders + inaccuracies;
-  const accuracy = moves.length > 0 ? Math.max(0, 100 - (totalErrors / moves.length * 100)) : 0;
   
   let summary = '';
   
-  // Opening assessment
-  if (openingMoves >= 10) {
-    summary += 'You played a solid opening, developing your pieces well. ';
+  // Game length context
+  if (moves.length < 30) {
+    summary += `This was a quick ${moves.length} move game. `;
+  } else if (moves.length > 60) {
+    summary += `This was a long battle with ${moves.length} moves. `;
   } else {
-    summary += 'The opening phase was brief. ';
+    summary += `This ${moves.length} move game had some interesting moments. `;
   }
   
-  // Middle game assessment
-  const middleGameMoves = Math.floor(moves.length / 3);
-  if (middleGameMoves > 0) {
-    if (blunders === 0 && mistakes <= 2) {
-      summary += 'Your middle game was strong, with few tactical errors. ';
-    } else if (blunders > 0) {
-      summary += `The middle game had ${blunders} critical blunder${blunders > 1 ? 's' : ''} that changed the course of the game. `;
-    }
+  // Error summary - beginner friendly
+  if (totalErrors === 0) {
+    summary += 'Both players made solid moves throughout! ';
+  } else if (blunders > 0) {
+    summary += `There ${blunders === 1 ? 'was' : 'were'} ${blunders} big mistake${blunders > 1 ? 's' : ''} that really mattered. `;
+  } else if (mistakes > 0) {
+    summary += `There ${mistakes === 1 ? 'was' : 'were'} ${mistakes} mistake${mistakes > 1 ? 's' : ''} to learn from. `;
+  } else if (inaccuracies > 0) {
+    summary += `Just ${inaccuracies} small inaccurac${inaccuracies === 1 ? 'y' : 'ies'} - pretty clean play! `;
   }
   
-  // Overall assessment
-  if (accuracy >= 85) {
-    summary += 'Overall, this was an excellent game with high accuracy. ';
-  } else if (accuracy >= 70) {
-    summary += 'This was a good game with room for improvement. ';
-  } else {
-    summary += 'This game had several mistakes that could be improved. ';
-  }
-  
-  // Key moments
-  if (blunders > 0) {
-    summary += `Watch out for blunders - you had ${blunders} critical mistake${blunders > 1 ? 's' : ''}. `;
+  // Encouragement
+  if (totalErrors <= 3) {
+    summary += "Great game! ";
+  } else if (blunders <= 1) {
+    summary += "Good effort! ";
   }
   
   return summary;
@@ -1500,9 +1554,18 @@ function updateMoveCommentary(moveIndex, commentary) {
 }
 
 function displayGameSummary() {
-  // Game summary is now shown via key moments and move analysis panel
-  // This function is kept for compatibility
   console.log('Game summary:', gameSummary);
+  
+  // Show summary in the move analysis panel when at start
+  if (gameSummary && currentMoveIndex === -1) {
+    const analysisMove = document.getElementById('analysisMove');
+    const analysisText = document.getElementById('analysisText');
+    const analysisIcon = document.getElementById('analysisIcon');
+    
+    if (analysisMove) analysisMove.textContent = '📊 Game Overview';
+    if (analysisText) analysisText.textContent = gameSummary;
+    if (analysisIcon) analysisIcon.textContent = '📋';
+  }
 }
 
 function displayGameInfo(pgn) {
@@ -1626,12 +1689,19 @@ function goToMove(index) {
     clearMoveHighlights();
   }
   
+  // Update evaluation bar based on current position
   if (index >= 0 && analysisData[index]) {
     const eval = analysisData[index];
     const cp = eval.cp || 0;
-    updateEvaluation(cp);
+    // Use the evaluation after this move (which is stored in analysisData[index])
+    updateEvaluation(cp, true);
+    console.log(`📊 Move ${index + 1}: Updating eval bar to ${cp}cp (${(cp/100).toFixed(1)})`);
+  } else if (index === -1) {
+    // Starting position - equal
+    updateEvaluation(0, false);
   } else {
-    updateEvaluation(0);
+    // Move not analyzed yet
+    updateEvaluation(0, false);
   }
   
   // Speak the move
@@ -1851,14 +1921,20 @@ function updateMoveAnalysisPanel(moveIndex) {
   // Commentary text
   textEl.textContent = commentary || `${player} plays ${move.san}`;
   
-  // Evaluation
+  // Evaluation - update both the panel and the side bar
   if (analysis && analysis.cp !== undefined) {
-    const cp = analysis.cp / 100;
-    evalEl.textContent = cp > 0 ? `+${cp.toFixed(1)}` : cp.toFixed(1);
-    evalEl.className = 'analysis-eval' + (cp > 1 ? ' winning' : cp < -1 ? ' losing' : '');
+    const cp = analysis.cp; // Keep in centipawns for updateEvaluation
+    const displayCp = cp / 100; // Convert to pawns for display
+    evalEl.textContent = displayCp > 0 ? `+${displayCp.toFixed(1)}` : displayCp.toFixed(1);
+    evalEl.className = 'analysis-eval' + (displayCp > 1 ? ' winning' : displayCp < -1 ? ' losing' : '');
     evalEl.style.display = 'block';
+    
+    // Also update the evaluation bar on the side
+    updateEvaluation(cp, true);
   } else {
     evalEl.style.display = 'none';
+    // Reset eval bar if no analysis
+    updateEvaluation(0, false);
   }
   
   // Best move hint
@@ -1925,6 +2001,12 @@ function playMoves() {
   if (isPlaying) return;
   
   isPlaying = true;
+  
+  // Speak intro summary if starting from beginning
+  if (currentMoveIndex === -1 && gameSummary) {
+    speakGameIntro();
+  }
+  
   playInterval = setInterval(() => {
     if (currentMoveIndex < moves.length - 1) {
       nextMove();
@@ -1935,7 +2017,37 @@ function playMoves() {
   
   // Play first move if at start
   if (currentMoveIndex === -1) {
-    nextMove();
+    // Delay first move to let intro finish
+    setTimeout(() => {
+      if (isPlaying) nextMove();
+    }, gameSummary ? 3000 : 0);
+  }
+}
+
+async function speakGameIntro() {
+  if (!gameSummary || !voiceEnabled) return;
+  
+  // Create a friendly game intro
+  let intro = "Let's review this game! ";
+  intro += gameSummary;
+  
+  // Try ElevenLabs first
+  if (typeof window.speakWithElevenLabs === 'function') {
+    try {
+      const success = await window.speakWithElevenLabs(intro);
+      if (success) return;
+    } catch (e) {
+      console.log('ElevenLabs intro failed, using fallback');
+    }
+  }
+  
+  // Fallback to browser TTS
+  if (synth && selectedVoice) {
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(intro);
+    utterance.voice = selectedVoice;
+    utterance.rate = 1.0;
+    synth.speak(utterance);
   }
 }
 
