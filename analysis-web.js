@@ -912,6 +912,27 @@ async function initializeStockfish() {
   });
 }
 
+/**
+ * Update the sexy progress bar during analysis
+ */
+function updateAnalysisProgress(current, total, percent) {
+  const progressBar = document.getElementById('analysis-progress-bar');
+  const progressPercent = document.getElementById('analysis-progress-percent');
+  const loadingMoves = document.getElementById('analysis-loading-moves');
+  
+  if (progressBar) {
+    progressBar.style.width = `${percent}%`;
+  }
+  
+  if (progressPercent) {
+    progressPercent.textContent = `${percent}%`;
+  }
+  
+  if (loadingMoves) {
+    loadingMoves.textContent = `Analyzing move ${current} of ${total}`;
+  }
+}
+
 function updateAnalysisStatus(status) {
   const analysisText = document.getElementById('analysisText');
   if (analysisText) {
@@ -998,13 +1019,35 @@ async function analyzeGame() {
   const ChessClass = window.Chess;
   const tempChess = new ChessClass();
   
-  // Show loading indicator
+  // Show sexy loading indicator with progress bar
   const movesList = document.getElementById('movesList');
   const loadingDiv = document.createElement('div');
   loadingDiv.id = 'analysis-loading';
-  loadingDiv.style.cssText = 'padding: 20px; text-align: center; color: var(--accent-orange);';
-  loadingDiv.textContent = 'Analyzing game... This may take a minute.';
+  loadingDiv.className = 'analysis-loading-container';
+  loadingDiv.innerHTML = `
+    <div class="analysis-loading-header">
+      <div class="analysis-loading-title">
+        <span class="analysis-loading-icon">🔬</span>
+        <span>Stockfish Analysis</span>
+      </div>
+      <div class="analysis-loading-percent" id="analysis-progress-percent">0%</div>
+    </div>
+    <div class="analysis-progress-wrapper">
+      <div class="analysis-progress-bar" id="analysis-progress-bar" style="width: 0%;"></div>
+    </div>
+    <div class="analysis-loading-details">
+      <span class="analysis-loading-moves" id="analysis-loading-moves">Initializing engine...</span>
+      <div class="analysis-loading-status">
+        <span class="analysis-loading-dot"></span>
+        <span class="analysis-loading-dot"></span>
+        <span class="analysis-loading-dot"></span>
+      </div>
+    </div>
+  `;
   movesList.parentElement.insertBefore(loadingDiv, movesList);
+  
+  // Initialize progress bar
+  updateAnalysisProgress(0, moves.length, 0);
   
   let totalMistakes = 0;
   let totalBlunders = 0;
@@ -1073,8 +1116,9 @@ async function analyzeGame() {
       moveIndex: i
     };
     
-    // Update progress
+    // Update sexy progress bar
     const progress = Math.round(((i + 1) / moves.length) * 100);
+    updateAnalysisProgress(i + 1, moves.length, progress);
     updateAnalysisStatus(`🔬 Stockfish analyzing: ${i + 1}/${moves.length} (${progress}%)`);
     
     // Store evaluation
@@ -1160,10 +1204,8 @@ async function analyzeGame() {
       totalInaccuracies++;
     }
     
-    // Update progress
-    if (i % 5 === 0) {
-      loadingDiv.textContent = `Analyzing move ${i + 1} of ${moves.length}...`;
-    }
+    // Update progress (smooth updates every move)
+    updateAnalysisProgress(i + 1, moves.length, Math.round(((i + 1) / moves.length) * 100));
   }
   
   // Generate game summary

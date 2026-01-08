@@ -992,6 +992,176 @@ body {
   }
 }
 
+/* Sexy Loading Progress Bar */
+.analysis-loading-container {
+  padding: 24px;
+  background: var(--bg-surface);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  margin: 16px 0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.analysis-loading-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.analysis-loading-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.analysis-loading-icon {
+  font-size: 20px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.analysis-loading-percent {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bootstrap Progress Bar - Custom Styled */
+.analysis-progress-wrapper {
+  position: relative;
+  height: 32px;
+  background: var(--background);
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.analysis-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, 
+    var(--primary) 0%, 
+    rgba(230, 122, 40, 0.9) 50%,
+    var(--primary) 100%);
+  background-size: 200% 100%;
+  animation: progress-shine 2s ease-in-out infinite;
+  border-radius: 16px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 
+    0 0 10px rgba(230, 122, 40, 0.5),
+    0 0 20px rgba(230, 122, 40, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+@keyframes progress-shine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.analysis-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent
+  );
+  animation: progress-glow 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-glow {
+  0%, 100% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+}
+
+.analysis-loading-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.analysis-loading-moves {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.analysis-loading-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.analysis-loading-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--primary);
+  border-radius: 50%;
+  animation: loading-dot 1.4s ease-in-out infinite;
+}
+
+.analysis-loading-dot:nth-child(1) { animation-delay: 0s; }
+.analysis-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+.analysis-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes loading-dot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
+/* Bootstrap Grid Overrides for our theme */
+.container-fluid {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.row {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+[class*="col-"] {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Override Bootstrap button styles to match our theme */
+.btn-primary {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+
 
 
 
