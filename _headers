@@ -1,0 +1,10 @@
+/libs/stockfish.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/libs/stockfish.wasm
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Type: application/wasm
+
+/*.js
+  Cache-Control: public, max-age=3600
+

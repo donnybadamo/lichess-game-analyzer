@@ -6,6 +6,23 @@ const path = require('path');
 
 const outputDir = './cloudflare-dist';
 
+// Recursive copy function (moved to top to avoid duplication)
+function copyRecursive(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyRecursive(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
 // Create output directory
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
@@ -17,7 +34,8 @@ const filesToCopy = [
   'analysis-web.js',          // Web version (uses localStorage, not chrome.storage)
   'analysis.css',
   'elevenlabs-tts-web.js',    // Web version of ElevenLabs TTS
-  'cloudflare-secrets-web.js' // Secrets helper for web app
+  'cloudflare-secrets-web.js', // Secrets helper for web app
+  '_headers'                   // Cloudflare Pages headers (prevents stockfish.js optimization)
 ];
 
 filesToCopy.forEach(file => {
@@ -33,21 +51,6 @@ filesToCopy.forEach(file => {
 const libsSrc = path.join(__dirname, 'libs');
 const libsDest = path.join(outputDir, 'libs');
 if (fs.existsSync(libsSrc)) {
-  function copyRecursive(src, dest) {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true });
-    }
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name);
-      const destPath = path.join(dest, entry.name);
-      if (entry.isDirectory()) {
-        copyRecursive(srcPath, destPath);
-      } else {
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-  }
   copyRecursive(libsSrc, libsDest);
   console.log('✓ Copied libs/ directory');
 }
@@ -56,23 +59,16 @@ if (fs.existsSync(libsSrc)) {
 const iconsSrc = path.join(__dirname, 'icons');
 const iconsDest = path.join(outputDir, 'icons');
 if (fs.existsSync(iconsSrc)) {
-  function copyRecursive(src, dest) {
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true });
-    }
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name);
-      const destPath = path.join(dest, entry.name);
-      if (entry.isDirectory()) {
-        copyRecursive(srcPath, destPath);
-      } else {
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-  }
   copyRecursive(iconsSrc, iconsDest);
   console.log('✓ Copied icons/ directory');
+}
+
+// Copy images directory (optional)
+const imagesSrc = path.join(__dirname, 'images');
+const imagesDest = path.join(outputDir, 'images');
+if (fs.existsSync(imagesSrc)) {
+  copyRecursive(imagesSrc, imagesDest);
+  console.log('✓ Copied images/ directory');
 }
 
 console.log('\n✅ Build complete! Output in:', outputDir);

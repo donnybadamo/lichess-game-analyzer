@@ -46,9 +46,18 @@ async function loadElevenLabsCredentials() {
       getSecretFromCloudflare('ELEVENLABS_VOICE_ID')
     ]);
     
+    // Track what was actually loaded
+    const loadedSecrets = [];
+    if (apiKey) loadedSecrets.push('API_KEY');
+    if (agentId) loadedSecrets.push('AGENT_ID');
+    if (voiceId) loadedSecrets.push('VOICE_ID');
+    
     if (!apiKey) {
       console.warn('⚠️ No API key found in Cloudflare Worker');
-      console.log('💡 Secrets will not be loaded. Voice will use browser TTS unless credentials are in localStorage.');
+      console.log('💡 To set secrets, use: wrangler secret put ELEVENLABS_API_KEY');
+      if (!agentId) console.log('💡 To set agent ID: wrangler secret put ELEVENLABS_AGENT_ID');
+      if (!voiceId) console.log('💡 To set voice ID: wrangler secret put ELEVENLABS_VOICE_ID');
+      console.log('💡 Voice will use browser TTS unless credentials are in localStorage.');
       return null;
     }
     
@@ -57,7 +66,20 @@ async function loadElevenLabsCredentials() {
     if (agentId) localStorage.setItem('elevenlabsAgentId', agentId);
     if (voiceId) localStorage.setItem('elevenlabsVoiceId', voiceId);
     
-    console.log('✅ Loaded ElevenLabs credentials from Cloudflare Worker');
+    // Only show success if we actually loaded something
+    if (loadedSecrets.length > 0) {
+      console.log(`✅ Loaded ElevenLabs credentials: ${loadedSecrets.join(', ')}`);
+    }
+    
+    // Warn about missing optional credentials
+    if (!agentId) {
+      console.warn('⚠️ ELEVENLABS_AGENT_ID not found (optional)');
+      console.log('💡 To set: wrangler secret put ELEVENLABS_AGENT_ID');
+    }
+    if (!voiceId) {
+      console.warn('⚠️ ELEVENLABS_VOICE_ID not found (optional)');
+      console.log('💡 To set: wrangler secret put ELEVENLABS_VOICE_ID');
+    }
     
     return { apiKey, agentId, voiceId };
     

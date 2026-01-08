@@ -89,7 +89,9 @@
   // Check if extension context is still valid
   function isExtensionValid() {
     try {
-      return chrome && chrome.runtime && chrome.runtime.id !== undefined;
+      // Attempt to access a chrome.runtime property to check if context is valid
+      chrome.runtime.getURL('dummy.html');
+      return true;
     } catch (e) {
       return false;
     }
@@ -217,28 +219,34 @@
     }
 
     // Store game data (with error handling for extension context invalidation)
-    if (!isExtensionValid()) {
-      console.error('Extension context invalidated. Please reload the page.');
-      alert('Extension context invalidated. Please reload the page and try again.');
-      return;
-    }
-
     try {
+      if (!isExtensionValid()) {
+        console.error('Extension context invalidated. Please reload the page.');
+        alert('Extension context invalidated. Please reload the page and try again.');
+        return;
+      }
+
       chrome.storage.local.set({ 
         currentGamePGN: pgn,
         gameUrl: window.location.href
       }, () => {
-        // Check for errors
-        if (chrome.runtime.lastError) {
-          console.error('Storage error:', chrome.runtime.lastError);
-          // Still try to show overlay even if storage fails
+        try {
+          // Check for errors
+          if (chrome.runtime.lastError) {
+            console.error('Storage error:', chrome.runtime.lastError);
+            // Still try to show overlay even if storage fails
+          }
+          // Show as overlay popup instead of new tab
+          showAnalysisOverlay(pgn);
+        } catch (e) {
+          console.error('Error in storage callback:', e);
+          // Still try to show overlay
+          showAnalysisOverlay(pgn);
         }
-        // Show as overlay popup instead of new tab
-        showAnalysisOverlay(pgn);
       });
     } catch (e) {
       console.error('Error storing game data:', e);
-      // Still try to show overlay
+      // Still try to show overlay even if storage fails
       showAnalysisOverlay(pgn);
     }
   }
@@ -312,9 +320,15 @@
         alert('Extension context invalidated. Please reload the page and try again.');
         return;
       }
-      analysisUrl = chrome.runtime.getURL('analysis.html') + `?pgn=${encodeURIComponent(pgn)}`;
+      try {
+        analysisUrl = chrome.runtime.getURL('analysis.html') + `?pgn=${encodeURIComponent(pgn)}`;
+      } catch (urlError) {
+        console.error('Error getting analysis URL:', urlError);
+        alert('Extension context invalidated. Please reload the page and try again.');
+        return;
+      }
     } catch (e) {
-      console.error('Error getting analysis URL:', e);
+      console.error('Error in showAnalysisOverlay:', e);
       alert('Extension context invalidated. Please reload the page and try again.');
       return;
     }
@@ -434,16 +448,25 @@
     });
 
     analyzeBtn.addEventListener('click', async () => {
-      analyzeBtn.disabled = true;
-      analyzeBtn.textContent = '⏳ Loading...';
-      
-      const gameData = extractGameData();
-      if (gameData) {
-        await openAnalysisPage(gameData, true);
-        analyzeBtn.disabled = false;
-        analyzeBtn.innerHTML = '☘️ Analyze';
-      } else {
-        alert('Could not find game data. Please make sure you are on a finished game page.');
+      try {
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = '⏳ Loading...';
+        
+        const gameData = extractGameData();
+        if (gameData) {
+          try {
+            await openAnalysisPage(gameData, true);
+          } catch (e) {
+            console.error('Error opening analysis page:', e);
+            alert('Error opening analysis page. Please try again or reload the page.');
+          }
+        } else {
+          alert('Could not find game data. Please make sure you are on a finished game page.');
+        }
+      } catch (e) {
+        console.error('Error in analyze button click:', e);
+        alert('An error occurred. Please try again or reload the page.');
+      } finally {
         analyzeBtn.disabled = false;
         analyzeBtn.innerHTML = '☘️ Analyze';
       }
@@ -476,44 +499,67 @@
     });
 
     newTabBtn.addEventListener('click', async () => {
-      newTabBtn.disabled = true;
-      
-      const gameData = extractGameData();
-      if (gameData) {
-        let pgn = gameData.pgn;
-        if (!pgn && gameData.gameId) {
-          pgn = await getPGNFromAPI(gameData.gameId);
-        }
-        if (pgn) {
-          if (!isExtensionValid()) {
-            console.error('Extension context invalidated. Please reload the page.');
-            alert('Extension context invalidated. Please reload the page and try again.');
-            newTabBtn.disabled = false;
-            return;
+      try {
+        newTabBtn.disabled = true;
+        
+        const gameData = extractGameData();
+        if (gameData) {
+          let pgn = gameData.pgn;
+          if (!pgn && gameData.gameId) {
+            try {
+              pgn = await getPGNFromAPI(gameData.gameId);
+            } catch (e) {
+              console.error('Error fetching PGN:', e);
+              alert('Error fetching game data. Please try again.');
+              return;
+            }
           }
-          
-          try {
-            chrome.storage.local.set({ currentGamePGN: pgn, gameUrl: window.location.href }, () => {
-              if (chrome.runtime.lastError) {
-                console.error('Storage error:', chrome.runtime.lastError);
+          if (pgn) {
+            try {
+              if (!isExtensionValid()) {
+                console.error('Extension context invalidated. Please reload the page.');
+                alert('Extension context invalidated. Please reload the page and try again.');
+                return;
               }
-              try {
-                chrome.runtime.sendMessage({ action: 'openAnalysis', pgn: pgn }, (response) => {
+              
+              chrome.storage.local.set({ currentGamePGN: pgn, gameUrl: window.location.href }, () => {
+                try {
                   if (chrome.runtime.lastError) {
-                    console.error('Message error:', chrome.runtime.lastError);
+                    console.error('Storage error:', chrome.runtime.lastError);
                   }
-                });
-              } catch (e) {
-                console.error('Error sending message:', e);
-              }
-            });
-          } catch (e) {
-            console.error('Error storing game data:', e);
-            alert('Extension context invalidated. Please reload the page and try again.');
+                  try {
+                    if (!isExtensionValid()) {
+                      console.error('Extension context invalidated before sending message.');
+                      return;
+                    }
+                    chrome.runtime.sendMessage({ action: 'openAnalysis', pgn: pgn }, (response) => {
+                      if (chrome.runtime.lastError) {
+                        console.error('Message error:', chrome.runtime.lastError);
+                      }
+                    });
+                  } catch (e) {
+                    console.error('Error sending message:', e);
+                  }
+                } catch (e) {
+                  console.error('Error in storage callback:', e);
+                }
+              });
+            } catch (e) {
+              console.error('Error storing game data:', e);
+              alert('Extension context invalidated. Please reload the page and try again.');
+            }
+          } else {
+            alert('Could not extract game data. Please make sure you are on a finished game page.');
           }
+        } else {
+          alert('Could not find game data. Please make sure you are on a finished game page.');
         }
+      } catch (e) {
+        console.error('Error in new tab button click:', e);
+        alert('An error occurred. Please try again or reload the page.');
+      } finally {
+        newTabBtn.disabled = false;
       }
-      newTabBtn.disabled = false;
     });
 
     btnContainer.appendChild(analyzeBtn);
@@ -586,20 +632,37 @@
   // Listen for messages from background script
   try {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-      if (request.action === 'analyzeCurrentGame') {
-        if (!isExtensionValid()) {
+      try {
+        if (request.action === 'analyzeCurrentGame') {
+          if (!isExtensionValid()) {
+            sendResponse({ success: false, error: 'Extension context invalidated' });
+            return true;
+          }
+          try {
+            const gameData = extractGameData();
+            if (gameData) {
+              openAnalysisPage(gameData, true).catch(err => {
+                console.error('Error opening analysis page:', err);
+              });
+              sendResponse({ success: true });
+            } else {
+              sendResponse({ success: false, error: 'No game data found' });
+            }
+          } catch (e) {
+            console.error('Error in analyzeCurrentGame handler:', e);
+            sendResponse({ success: false, error: 'Error: ' + e.message });
+          }
+        }
+        return true;
+      } catch (e) {
+        console.error('Error in message listener:', e);
+        try {
           sendResponse({ success: false, error: 'Extension context invalidated' });
-          return true;
+        } catch (sendErr) {
+          // Ignore errors when sending response fails
         }
-        const gameData = extractGameData();
-        if (gameData) {
-          openAnalysisPage(gameData, true);
-          sendResponse({ success: true });
-        } else {
-          sendResponse({ success: false, error: 'No game data found' });
-        }
+        return true;
       }
-      return true;
     });
   } catch (e) {
     console.error('Error setting up message listener:', e);

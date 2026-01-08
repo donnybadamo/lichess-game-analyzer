@@ -1141,16 +1141,17 @@ async function analyzeGame() {
                   bestMoveEval = await getPositionEvaluation(positionAfterBestMove, i, true);
                 }
               } catch (moveError) {
-                // Log error details properly
+                // Log error details properly with JSON.stringify to avoid [object Object]
                 const errorMsg = moveError instanceof Error ? moveError.message : String(moveError);
-                console.warn('Invalid best move for position:', {
+                const errorDetails = {
                   uciMove: uciMove,
                   from: from,
                   to: to,
                   promotion: promotion,
                   error: errorMsg,
                   fen: positionBeforeMove.substring(0, 50) + '...'
-                });
+                };
+                console.warn('Invalid best move for position:', JSON.stringify(errorDetails, null, 2));
               }
             }
           }

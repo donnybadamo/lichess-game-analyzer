@@ -130,3 +130,4 @@ async function speakWithElevenLabs(text) {
 // Export globally
 window.speakWithElevenLabs = speakWithElevenLabs;
 
+
