@@ -11,6 +11,7 @@ let keyMoments = []; // Store key turning points
 let gameSummary = null;
 let isPlaying = false;
 let playInterval = null;
+let isInitializing = false; // Flag to prevent board updates during initialization
 let voiceEnabled = true;
 let synth = window.speechSynthesis;
 let selectedVoice = null;
@@ -458,7 +459,11 @@ if (document.readyState === 'loading') {
 // Initialize demo game with pre-made commentary (no analysis)
 async function initializeDemoGame(pgn) {
   try {
+    // Set initialization flag to prevent board updates
+    isInitializing = true;
+    
     // Load the game normally but skip analysis
+    // Don't reset board position here - we'll do it once at the very end
     await initializeGameWithoutAnalysis(pgn);
     
     // Check if example game commentary is available
@@ -597,8 +602,24 @@ async function initializeDemoGame(pgn) {
       displayGameSummary();
     }
     
-    // Reset to start position
+    // Final reset to start position - do this ONLY ONCE at the very end
+    // This ensures the board is stable and doesn't flicker
+    chess.reset();
     currentMoveIndex = -1;
+    if (board) {
+      // Force board to start position with multiple attempts and delays
+      // This ensures it sticks even if there are async operations
+      board.position('start');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      board.position('start'); // Set again to override any intermediate updates
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // Final verification and one more set to be absolutely sure
+      board.position('start');
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    clearMoveHighlights();
+    updateEvaluation(0);
+    
     resetMoveAnalysisPanel();
     
     // Update all move annotations in the moves list
@@ -608,9 +629,14 @@ async function initializeDemoGame(pgn) {
       }
     }
     
+    // Clear initialization flag - board navigation is now allowed
+    isInitializing = false;
+    
     console.log('Demo game loaded with pre-made commentary');
   } catch (error) {
     console.error('Error loading demo game:', error);
+    // Clear flag even on error
+    isInitializing = false;
     // Fallback to regular analysis
     await analyzeGame();
   }
@@ -650,9 +676,13 @@ async function initializeGameWithoutAnalysis(pgn) {
       throw new Error('Could not parse PGN: ' + parseError.message);
     }
     
-    // Extract moves
+    // Extract moves BEFORE resetting (history() needs chess to be at end position)
     moves = chess.history({ verbose: true });
     console.log('Moves extracted:', moves.length);
+    
+    // IMMEDIATELY reset chess object to start position after extracting moves
+    // This prevents the board from showing the end position
+    chess.reset();
     
     // Initialize board if needed
     if (!board) {
@@ -697,12 +727,32 @@ async function initializeGameWithoutAnalysis(pgn) {
       }
       
       board.position('start');
-    } else {
-      board.position(chess.fen());
+      // Small delay to let board initialize
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // CRITICAL: Ensure board is ALWAYS at start position during initialization
+    // Lock it to start and prevent any updates
+    if (board) {
+      chess.reset(); // Ensure chess object is at start FIRST
+      board.position('start');
+      await new Promise(resolve => setTimeout(resolve, 50));
+      chess.reset(); // Reset again
+      board.position('start'); // Set again
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
     
     // Initialize Stockfish (needed for eval bar, but won't analyze)
     await initializeStockfish();
+    
+    // Set index and LOCK board to start - don't allow any changes
+    currentMoveIndex = -1;
+    if (board) {
+      chess.reset();
+      board.position('start');
+      // Small delay to ensure it sticks
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
     // Update UI
     const welcomeSection = document.getElementById('welcomeSection');
@@ -778,9 +828,18 @@ async function initializeGame(pgn) {
       throw new Error('Could not parse PGN: ' + parseError.message);
     }
     
-    // Extract moves
+    // Extract moves BEFORE resetting (history() needs chess to be at end position)
     moves = chess.history({ verbose: true });
     console.log('Moves extracted:', moves.length);
+    
+    // IMMEDIATELY reset chess object to start position after extracting moves
+    // This prevents the board from showing the end position
+    chess.reset();
+    
+    // Ensure board is at start position if it exists
+    if (board) {
+      board.position('start');
+    }
     
     // Reuse existing board if already initialized, otherwise initialize new one
     if (!board) {
@@ -935,10 +994,18 @@ async function initializeGame(pgn) {
       throw err;
     }
     } else {
-      // Board already exists, just update position
+      // Board already exists, reset to start position
       console.log('Reusing existing board');
-      board.position(chess.fen());
+      chess.reset();
+      board.position('start');
     }
+
+    // Reset to start position after loading PGN
+    chess.reset();
+    currentMoveIndex = -1;
+    board.position('start');
+    clearMoveHighlights();
+    updateEvaluation(0);
 
     // Initialize Stockfish
     console.log('Initializing Stockfish...');
@@ -982,6 +1049,9 @@ async function initializeGame(pgn) {
     
     // Show game summary
     displayGameSummary();
+    
+    // Ensure we're at start position after analysis
+    resetToStart();
     
   } catch (error) {
     console.error('Error initializing game:', error);
@@ -1381,13 +1451,73 @@ function setupEventListeners() {
     if (demoBtn) {
       demoBtn.addEventListener('click', async () => {
         console.log('Loading demo game with pre-made commentary...');
-        await initializeDemoGame(EXAMPLE_GAME_PGN);
-        // Save demo game to localStorage
-        try {
-          localStorage.setItem('currentGamePGN', EXAMPLE_GAME_PGN);
-        } catch (err) {
-          console.warn('Could not save demo game to localStorage:', err);
+        
+        // Show loading overlay
+        const loadingOverlay = document.getElementById('demoLoadingOverlay');
+        if (loadingOverlay) {
+          loadingOverlay.style.display = 'flex';
         }
+        
+        // Hide board during initialization to prevent flickering
+        const boardSection = document.querySelector('.board-section');
+        const boardElement = document.getElementById('board');
+        if (boardSection) {
+          boardSection.style.opacity = '0';
+          boardSection.style.pointerEvents = 'none';
+        }
+        if (boardElement) {
+          boardElement.style.opacity = '0';
+        }
+        
+        // Disable button during loading
+        demoBtn.disabled = true;
+        
+        try {
+          // Add a small delay to ensure UI is stable
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Initialize demo game
+          await initializeDemoGame(EXAMPLE_GAME_PGN);
+          
+          // Add longer delay to ensure everything is rendered and board is stable
+          // The initializeDemoGame function already has delays built in, so this ensures
+          // the board position is fully set before showing it
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Verify board is at start position one more time before showing
+          if (board) {
+            board.position('start');
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+          
+          // Show board again with fade-in
+          if (boardSection) {
+            boardSection.style.transition = 'opacity 0.3s ease-in';
+            boardSection.style.opacity = '1';
+            boardSection.style.pointerEvents = 'auto';
+          }
+          if (boardElement) {
+            boardElement.style.transition = 'opacity 0.3s ease-in';
+            boardElement.style.opacity = '1';
+          }
+          
+          // Save demo game to localStorage
+          try {
+            localStorage.setItem('currentGamePGN', EXAMPLE_GAME_PGN);
+          } catch (err) {
+            console.warn('Could not save demo game to localStorage:', err);
+          }
+        } catch (error) {
+          console.error('Error loading demo game:', error);
+          showToast('error', 'Failed to load demo game. Please try again.');
+        } finally {
+          // Hide loading overlay
+          if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
+          }
+          demoBtn.disabled = false;
+        }
+        
         // Hide PGN modal if open
         const pgnModal = document.getElementById('pgnModal');
         if (pgnModal) {
@@ -2374,7 +2504,7 @@ function displayKeyMoments() {
   // Sort by move order for horizontal scroll
   const sortedMoments = [...keyMoments].sort((a, b) => a.moveIndex - b.moveIndex);
   
-  // Show all moments as chips
+  // Show all moments as chips with icons
   sortedMoments.forEach(moment => {
     const chip = document.createElement('div');
     chip.className = `moment-chip ${moment.type}`;
@@ -2382,7 +2512,26 @@ function displayKeyMoments() {
     
     const moveNum = Math.floor(moment.moveIndex / 2) + 1;
     
+    // Get icon based on type - use same icons as move classifications
+    let icon = '';
+    if (moment.type === 'blunder' || moment.type === 'missedMate') {
+      icon = '<span class="moment-icon">??</span>';
+    } else if (moment.type === 'mistake') {
+      icon = '<span class="moment-icon">?</span>';
+    } else if (moment.type === 'inaccuracy') {
+      icon = '<span class="moment-icon">?!</span>';
+    } else if (moment.type === 'brilliant') {
+      icon = '<span class="moment-icon">!!</span>';
+    } else if (moment.type === 'best' || moment.type === 'great') {
+      icon = '<span class="moment-icon">!</span>';
+    } else if (moment.type === 'turning-point') {
+      icon = '<span class="moment-icon">🔄</span>';
+    } else {
+      icon = '<span class="moment-icon">📍</span>';
+    }
+    
     chip.innerHTML = `
+      ${icon}
       <span class="chip-move">${moveNum}. ${moment.move}</span>
     `;
     
@@ -3052,6 +3201,12 @@ function ensureDemoSectionHidden() {
 function goToMove(index) {
   if (index < -1 || index >= moves.length) return;
   
+  // Don't allow navigation during initialization
+  if (isInitializing) {
+    console.log('Blocked goToMove during initialization');
+    return;
+  }
+  
   // Ensure demo section stays hidden
   ensureDemoSectionHidden();
   
@@ -3159,6 +3314,11 @@ let previewState = null; // Store current state when previewing
 function previewMove(index) {
   if (index < 0 || index >= moves.length) return;
   
+  // Don't allow preview during initialization
+  if (isInitializing) {
+    return;
+  }
+  
   // Save current state if not already saved
   if (previewState === null) {
     previewState = {
@@ -3224,39 +3384,56 @@ function drawMoveArrow(from, to, type = 'played') {
   const boardRect = boardEl.getBoundingClientRect();
   const squareSize = boardRect.width / 8;
   
+  // Ensure SVG matches board size exactly
+  arrowsSvg.setAttribute('width', boardRect.width);
+  arrowsSvg.setAttribute('height', boardRect.height);
+  arrowsSvg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+  
   // Convert square names to coordinates
   const fromCoords = squareToCoords(from, squareSize);
   const toCoords = squareToCoords(to, squareSize);
   
   if (!fromCoords || !toCoords) return;
   
-  // Shorten arrow to not cover pieces
+  // Shorten arrow to not cover pieces - make arrows shorter and cleaner
   const dx = toCoords.x - fromCoords.x;
   const dy = toCoords.y - fromCoords.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len === 0) return;
-  const shortenBy = squareSize * 0.35;
   
-  const startX = fromCoords.x + (dx / len) * shortenBy;
-  const startY = fromCoords.y + (dy / len) * shortenBy;
-  const endX = toCoords.x - (dx / len) * shortenBy;
-  const endY = toCoords.y - (dy / len) * shortenBy;
+  // Calculate arrow head size first (needed to determine line end point)
+  const headSize = squareSize * (type === 'best-critical' ? 0.32 : type === 'best' ? 0.28 : 0.26);
+  const angle = Math.atan2(dy, dx);
+  const headAngle = Math.PI / 5; // 36 degrees
   
-  // Create arrow line
+  // Calculate where arrow head tip should be (destination square, shortened)
+  const shortenTo = squareSize * 0.4; // Distance from destination square center
+  const tipX = toCoords.x - (dx / len) * shortenTo;
+  const tipY = toCoords.y - (dy / len) * shortenTo;
+  
+  // Calculate where the line should end (at the base of the arrow head)
+  // The base is behind the tip, so we move back along the line by headSize
+  const lineEndX = tipX - (dx / len) * headSize;
+  const lineEndY = tipY - (dy / len) * headSize;
+  
+  // Start point of line (from square, shortened)
+  const shortenFrom = squareSize * 0.25;
+  const startX = fromCoords.x + (dx / len) * shortenFrom;
+  const startY = fromCoords.y + (dy / len) * shortenFrom;
+  
+  // Create arrow line - stops exactly at base of arrow head
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   line.setAttribute('x1', startX);
   line.setAttribute('y1', startY);
-  line.setAttribute('x2', endX);
-  line.setAttribute('y2', endY);
+  line.setAttribute('x2', lineEndX);
+  line.setAttribute('y2', lineEndY);
   line.classList.add('arrow-line', `arrow-${type}`);
   
-  // Create arrow head
-  const headSize = squareSize * (type === 'best' ? 0.3 : 0.25);
-  const angle = Math.atan2(dy, dx);
+  // Create arrow head - tip points to destination, base connects to line end
   const headPoints = [
-    [endX, endY],
-    [endX - headSize * Math.cos(angle - Math.PI / 6), endY - headSize * Math.sin(angle - Math.PI / 6)],
-    [endX - headSize * Math.cos(angle + Math.PI / 6), endY - headSize * Math.sin(angle + Math.PI / 6)]
+    [tipX, tipY], // Tip of arrow (points to destination)
+    [lineEndX - headSize * 0.4 * Math.cos(angle - headAngle), lineEndY - headSize * 0.4 * Math.sin(angle - headAngle)],
+    [lineEndX - headSize * 0.4 * Math.cos(angle + headAngle), lineEndY - headSize * 0.4 * Math.sin(angle + headAngle)]
   ];
   
   const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
