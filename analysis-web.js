@@ -997,8 +997,23 @@ function resetGameState() {
 async function initializeStockfish() {
   return new Promise((resolve) => {
     try {
-      // Load Stockfish as a Web Worker (use relative path for web deployment)
-      const stockfishUrl = 'libs/stockfish.js';
+      // Load Stockfish as a Web Worker
+      // Handle both extension and web contexts
+      let stockfishUrl;
+      
+      // Try to determine the correct URL for Stockfish worker
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getURL) {
+        // Extension context - use chrome.runtime.getURL
+        stockfishUrl = chrome.runtime.getURL('libs/stockfish.js');
+      } else {
+        // Web context - construct absolute URL from current page location
+        // Get the base path (directory containing the current HTML file)
+        const currentPath = window.location.pathname;
+        const basePath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+        // Construct absolute URL
+        stockfishUrl = new URL(basePath + '/libs/stockfish.js', window.location.origin).href;
+      }
+      
       console.log('🔧 Loading Stockfish from:', stockfishUrl);
       stockfish = new Worker(stockfishUrl);
       

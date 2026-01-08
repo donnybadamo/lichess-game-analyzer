@@ -167,12 +167,13 @@ body {
 .board-with-eval {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: center;
 }
 
 .eval-bar {
   width: 28px;
+  align-self: stretch;
   background: linear-gradient(to bottom, #2a2a2a 0%, #2a2a2a 50%, #e8e4dc 50%, #e8e4dc 100%);
   border-radius: 4px;
   position: relative;
