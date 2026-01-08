@@ -351,13 +351,8 @@ async function initializeAnalysisPage() {
         }
         return;
       } else {
-        // Show PGN modal instead of error
-        const pgnModal = document.getElementById('pgnModal');
-        if (pgnModal) {
-          pgnModal.style.display = 'flex';
-          console.log('Showing PGN modal (no PGN found)');
-        }
-        console.log('No PGN found. You can paste PGN in the input field.');
+        // Don't show PGN modal immediately - show intro instead
+        updateAnalysisPanelWithIntro();
       }
     } catch (e) {
       console.error('Error accessing localStorage:', e);
@@ -374,15 +369,9 @@ async function initializeAnalysisPage() {
       pgnModal.style.display = 'none';
     }
   } else {
-    // Show PGN modal if no PGN provided
-    const pgnModal = document.getElementById('pgnModal');
-    if (pgnModal) {
-      pgnModal.style.display = 'flex';
-      console.log('Showing PGN modal (no PGN in URL)');
-    }
-    
-    // Don't show error - let user paste PGN instead
-    console.log('No PGN in URL. You can paste PGN in the input field below.');
+    // Don't show PGN modal immediately - let user explore first
+    // Show intro message instead
+    updateAnalysisPanelWithIntro();
   }
 }
 
@@ -807,6 +796,65 @@ function goToEnd() {
   if (moves.length > 0) {
     goToMove(moves.length - 1);
   }
+}
+
+function updateAnalysisPanelWithIntro() {
+  // Update the analysis panel with intro information
+  const analysisMove = document.getElementById('analysisMove');
+  const analysisText = document.getElementById('analysisText');
+  const analysisIcon = document.getElementById('analysisIcon');
+  const keyMomentsList = document.getElementById('keyMomentsList');
+  
+  if (analysisMove) {
+    analysisMove.textContent = 'Chess Game Analyzer';
+  }
+  
+  if (analysisText) {
+    analysisText.innerHTML = `
+      <div style="margin-bottom: 16px;">
+        <strong>Analyze your chess games with AI-powered insights!</strong>
+      </div>
+      <div style="font-size: 13px; line-height: 1.8; color: var(--muted-foreground);">
+        <p style="margin-bottom: 12px;">✨ <strong>Features:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0;">
+          <li>🔍 <strong>Stockfish 16</strong> engine analysis</li>
+          <li>🎯 <strong>Move-by-move</strong> commentary</li>
+          <li>⚡ <strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
+          <li>🔊 <strong>Voice narration</strong> with AI voices</li>
+          <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
+        </ul>
+        <p style="margin-top: 16px; margin-bottom: 0;">
+          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px;">
+            📋 Paste PGN to Start Analysis
+          </button>
+        </p>
+      </div>
+    `;
+    
+    // Add click handler for the start button
+    setTimeout(() => {
+      const startBtn = document.getElementById('startAnalysisBtn');
+      if (startBtn) {
+        startBtn.addEventListener('click', () => {
+          const pgnModal = document.getElementById('pgnModal');
+          if (pgnModal) {
+            pgnModal.style.display = 'flex';
+          }
+        });
+      }
+    }, 100);
+  }
+  
+  if (analysisIcon) {
+    analysisIcon.textContent = '♟️';
+  }
+  
+  if (keyMomentsList) {
+    keyMomentsList.innerHTML = '<div class="moments-placeholder">Key moments from your game will appear here after analysis</div>';
+  }
+  
+  // Clear eval
+  updateEvaluation(0);
 }
 
 function resetGameState() {
