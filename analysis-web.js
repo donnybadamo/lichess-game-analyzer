@@ -1234,14 +1234,24 @@ async function analyzeGame() {
     let bestMoveSAN = null;
     if (evaluationBefore.bestMove) {
       try {
-        // Create a temporary chess instance to convert UCI to SAN
-        const tempChessForConversion = new window.Chess(positionBeforeMove);
+        // Create a temporary chess instance at the position Stockfish analyzed
+        // This MUST be the position BEFORE the move was made
+        const tempChessForConversion = new window.Chess();
+        tempChessForConversion.load(positionBeforeMove);
+        
         const uciMove = evaluationBefore.bestMove;
         // UCI format: "e2e4" or "e7e8q" (with promotion)
-        if (uciMove.length >= 4) {
+        if (uciMove && uciMove.length >= 4) {
           const from = uciMove.substring(0, 2);
           const to = uciMove.substring(2, 4);
-          const promotion = uciMove.length > 4 ? uciMove[4] : null;
+          const promotion = uciMove.length > 4 ? uciMove[4].toLowerCase() : null;
+          
+          // Verify the position matches what we expect
+          const expectedFen = tempChessForConversion.fen().split(' ')[0]; // Just position part
+          const actualFen = positionBeforeMove.split(' ')[0];
+          if (expectedFen !== actualFen) {
+            console.warn('Position mismatch when converting best move:', { expectedFen, actualFen });
+          }
           
           const moveObj = tempChessForConversion.move({
             from: from,
@@ -1251,10 +1261,15 @@ async function analyzeGame() {
           
           if (moveObj) {
             bestMoveSAN = moveObj.san;
+          } else {
+            console.warn('Invalid move for position:', { from, to, promotion, fen: positionBeforeMove, uciMove });
           }
         }
       } catch (e) {
-        console.warn('Could not convert best move to SAN:', e);
+        console.warn('Could not convert best move to SAN:', e, {
+          bestMove: evaluationBefore.bestMove,
+          position: positionBeforeMove
+        });
         bestMoveSAN = evaluationBefore.bestMove; // Fallback to UCI
       }
     }
