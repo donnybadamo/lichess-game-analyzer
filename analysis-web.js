@@ -793,6 +793,11 @@ function setupEventListeners() {
           return;
         }
         
+        // Close modal immediately when analyze is clicked
+        if (pgnModal) {
+          pgnModal.style.display = 'none';
+        }
+        
         analyzePgnBtn.disabled = true;
         analyzePgnBtn.textContent = 'Analyzing...';
         
@@ -802,11 +807,6 @@ function setupEventListeners() {
           
           // Initialize with pasted PGN
           await initializeGame(pgn);
-          
-          // Hide modal after successful analysis
-          if (pgnModal) {
-            pgnModal.style.display = 'none';
-          }
         } catch (error) {
           console.error('Error analyzing PGN:', error);
           alert('Error analyzing PGN: ' + error.message);
