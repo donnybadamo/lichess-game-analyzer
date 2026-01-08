@@ -184,43 +184,136 @@ function returnToGame() {
 }
 
 async function updateExplorationAnalysis() {
-  if (!stockfish) return;
+  if (!stockfish) {
+    console.warn('⚠️ Stockfish not available for exploration analysis');
+    const analysisText = document.getElementById('analysisText');
+    if (analysisText) {
+      analysisText.textContent = 'Stockfish not available for analysis';
+    }
+    return;
+  }
   
   const fen = chess.fen();
   
-  // Quick analysis of the explored position
+  // Quick analysis of the explored position (use quickEval for faster interactive feedback)
   const analysisText = document.getElementById('analysisText');
   if (analysisText) {
     analysisText.textContent = 'Analyzing position...';
   }
   
   try {
-    const evalResult = await getPositionEvaluation(fen, -1);
+    // Use quickEval=true for faster analysis during exploration (depth 12 instead of 20)
+    const evalResult = await getPositionEvaluation(fen, -1, true);
+    
+    if (!evalResult) {
+      console.warn('⚠️ No evaluation result returned');
+      if (analysisText) {
+        analysisText.textContent = 'Analysis unavailable';
+      }
+      return;
+    }
+    
     const cp = evalResult.cp || 0;
+    const mate = evalResult.mate;
     
     // Update eval bar
-    updateEvaluation(cp, true);
+    updateEvaluation(cp, true, mate);
     
-    // Update analysis text
+    // Update analysis text with detailed info
     if (analysisText) {
-      const evalDisplay = (cp / 100).toFixed(2);
-      const sign = cp > 0 ? '+' : '';
-      const advantage = cp > 50 ? 'White is better' : cp < -50 ? 'Black is better' : 'Position is equal';
-      analysisText.textContent = `Eval: ${sign}${evalDisplay} • ${advantage}`;
+      let evalDisplay;
+      if (mate !== null && mate !== undefined) {
+        evalDisplay = `M${mate > 0 ? '+' : ''}${mate}`;
+      } else {
+        const evalValue = (cp / 100).toFixed(2);
+        evalDisplay = cp > 0 ? `+${evalValue}` : evalValue;
+      }
+      
+      let advantage = '';
+      if (mate !== null && mate !== undefined) {
+        advantage = mate > 0 ? 'White is winning' : 'Black is winning';
+      } else if (cp > 150) {
+        advantage = 'White is better';
+      } else if (cp < -150) {
+        advantage = 'Black is better';
+      } else if (cp > 50) {
+        advantage = 'White is slightly better';
+      } else if (cp < -50) {
+        advantage = 'Black is slightly better';
+      } else {
+        advantage = 'Position is equal';
+      }
+      
+      analysisText.textContent = `Eval: ${evalDisplay} • ${advantage}`;
       
       if (evalResult.bestMove) {
-        analysisText.textContent += ` • Best: ${evalResult.bestMove}`;
+        // Convert UCI to SAN if needed for display
+        let bestMoveDisplay = evalResult.bestMove;
+        if (evalResult.bestMove.length === 4 && /^[a-h][1-8][a-h][1-8]$/.test(evalResult.bestMove)) {
+          // UCI format - try to convert to SAN using the chess instance
+          try {
+            const tempChess = new Chess(fen);
+            const move = tempChess.move({
+              from: evalResult.bestMove.substring(0, 2),
+              to: evalResult.bestMove.substring(2, 4),
+              promotion: evalResult.bestMove.length > 4 ? evalResult.bestMove[4] : undefined
+            });
+            if (move) {
+              bestMoveDisplay = move.san;
+            }
+          } catch (e) {
+            // Keep UCI format if conversion fails
+          }
+        }
+        analysisText.textContent += ` • Best: ${bestMoveDisplay}`;
+      }
+      
+      // Show depth info for transparency
+      if (evalResult.depth) {
+        analysisText.textContent += ` • Depth: ${evalResult.depth}`;
       }
     }
     
-    // Draw best move arrow
+    // Draw best move arrow if we have a best move
     clearMoveHighlights();
-    if (evalResult.bestMove && evalResult.bestMove.length >= 4) {
-      drawBestMoveArrow(evalResult.bestMove, '');
+    if (evalResult.bestMove) {
+      // Convert best move to from/to format for arrow drawing
+      if (evalResult.bestMove.length >= 4) {
+        const from = evalResult.bestMove.substring(0, 2);
+        const to = evalResult.bestMove.substring(2, 4);
+        
+        // Validate squares
+        if (/^[a-h][1-8]$/.test(from) && /^[a-h][1-8]$/.test(to)) {
+          drawMoveArrow(from, to, 'best');
+        } else {
+          // Try to get from PV if available
+          if (evalResult.pv && evalResult.pv.length > 0) {
+            // First move in PV might be in UCI format
+            const firstPv = evalResult.pv[0];
+            if (firstPv && firstPv.length >= 4) {
+              const pvFrom = firstPv.substring(0, 2);
+              const pvTo = firstPv.substring(2, 4);
+              if (/^[a-h][1-8]$/.test(pvFrom) && /^[a-h][1-8]$/.test(pvTo)) {
+                drawMoveArrow(pvFrom, pvTo, 'best');
+              }
+            }
+          }
+        }
+      }
     }
     
+    console.log('✅ Exploration analysis complete:', {
+      cp,
+      mate,
+      bestMove: evalResult.bestMove,
+      depth: evalResult.depth
+    });
+    
   } catch (e) {
-    console.error('Error analyzing explored position:', e);
+    console.error('❌ Error analyzing explored position:', e);
+    if (analysisText) {
+      analysisText.textContent = 'Error analyzing position. Try again.';
+    }
   }
 }
 
@@ -2161,8 +2254,6 @@ function displayMoves() {
     
     whiteCell.innerHTML = `<span class="piece-dot white-dot"></span><span class="move-san">${whiteMove.san}</span><span class="move-icon"></span>${whiteSuggestionHTML}`;
     whiteCell.addEventListener('click', () => goToMove(i));
-    whiteCell.addEventListener('mouseenter', () => previewMove(i));
-    whiteCell.addEventListener('mouseleave', () => clearPreview());
     movesList.appendChild(whiteCell);
     
     // Black's move (if exists)
@@ -2185,8 +2276,6 @@ function displayMoves() {
       
       blackCell.innerHTML = `<span class="piece-dot black-dot"></span><span class="move-san">${blackMove.san}</span><span class="move-icon"></span>${blackSuggestionHTML}`;
       blackCell.addEventListener('click', () => goToMove(i + 1));
-      blackCell.addEventListener('mouseenter', () => previewMove(i + 1));
-      blackCell.addEventListener('mouseleave', () => clearPreview());
       // Update annotation/quality display
       if (analysisData[i + 1]) {
         updateMoveAnnotation(i + 1, analysisData[i + 1]);
@@ -2534,26 +2623,11 @@ function displayKeyMoments() {
     
     const moveNum = Math.floor(moment.moveIndex / 2) + 1;
     
-    // Get icon based on type - use same icons as move classifications
-    let icon = '';
-    if (moment.type === 'blunder' || moment.type === 'missedMate') {
-      icon = '<span class="moment-icon">??</span>';
-    } else if (moment.type === 'mistake') {
-      icon = '<span class="moment-icon">?</span>';
-    } else if (moment.type === 'inaccuracy') {
-      icon = '<span class="moment-icon">?!</span>';
-    } else if (moment.type === 'brilliant') {
-      icon = '<span class="moment-icon">!!</span>';
-    } else if (moment.type === 'best' || moment.type === 'great') {
-      icon = '<span class="moment-icon">!</span>';
-    } else if (moment.type === 'turning-point') {
-      icon = '<span class="moment-icon">🔄</span>';
-    } else {
-      icon = '<span class="moment-icon">📍</span>';
-    }
+    // Get icon based on type - use distinct emoji icons for each moment type
+    const icon = getKeyMomentIcon(moment.type);
     
     chip.innerHTML = `
-      ${icon}
+      <span class="chip-icon">${icon}</span>
       <span class="chip-move">${moveNum}. ${moment.move}</span>
     `;
     
@@ -2567,21 +2641,61 @@ function displayKeyMoments() {
 
 function getKeyMomentIcon(type) {
   switch(type) {
-    case 'blunder': return '💥';
-    case 'mistake': return '⚠️';
-    case 'turning-point': return '🔄';
-    case 'brilliant': return '✨';
-    default: return '📍';
+    case 'blunder': 
+    case 'missedMate': 
+      return '✕'; // X icon for blunders
+    case 'mistake': 
+      return '×'; // Multiplication sign for mistakes
+    case 'inaccuracy': 
+      return '?'; // Question mark for inaccuracies
+    case 'brilliant': 
+      return '★'; // Star symbol for brilliant moves
+    case 'best': 
+      return '✓'; // Checkmark for best moves
+    case 'great': 
+      return '!'; // Exclamation for great moves
+    case 'good': 
+      return '○'; // Circle for good moves
+    case 'book': 
+      return '◉'; // Filled circle for book moves
+    case 'opening': 
+      return '▶'; // Play symbol for opening moves
+    case 'victory': 
+      return '★'; // Star for victory moves (same as brilliant for consistency)
+    case 'turning-point': 
+      return '↻'; // Circular arrow for turning points
+    default: 
+      return '•'; // Bullet point for other moments
   }
 }
 
 function getKeyMomentLabel(type) {
   switch(type) {
-    case 'blunder': return 'Blunder';
-    case 'mistake': return 'Mistake';
-    case 'turning-point': return 'Turning Point';
-    case 'brilliant': return 'Brilliant';
-    default: return 'Key Move';
+    case 'blunder': 
+    case 'missedMate': 
+      return 'Blunder';
+    case 'mistake': 
+      return 'Mistake';
+    case 'inaccuracy': 
+      return 'Inaccuracy';
+    case 'brilliant': 
+      return 'Brilliant';
+    case 'best': 
+      return 'Best Move';
+    case 'great': 
+      return 'Great Move';
+    case 'good': 
+      return 'Good Move';
+    case 'book': 
+      return 'Book Move';
+    case 'opening': 
+      return 'Opening';
+    case 'victory': 
+      return 'Victory';
+    case 'turning-point': 
+      return 'Turning Point';
+    default: 
+      return 'Key Move';
   }
 }
 
@@ -3222,20 +3336,17 @@ function ensureDemoSectionHidden() {
   }
 }
 
-function goToMove(index) {
-  if (index < -1 || index >= moves.length) return;
+async function goToMove(index) {
+  if (index < -1 || index >= moves.length) return Promise.resolve();
   
   // Don't allow navigation during initialization
   if (isInitializing) {
     console.log('Blocked goToMove during initialization');
-    return;
+    return Promise.resolve();
   }
   
   // Ensure demo section stays hidden
   ensureDemoSectionHidden();
-  
-  // Clear any preview state
-  clearPreview();
   
   // Reset exploration mode
   isExploringLine = false;
@@ -3274,10 +3385,11 @@ function goToMove(index) {
     updateEvaluation(0, false);
   }
   
-  // Speak the move
+  // Speak the move and return the promise so caller can wait for it
   if (voiceEnabled && synth) {
-    speakMoveWithAnalysis(index);
+    return speakMoveWithAnalysis(index);
   }
+  return Promise.resolve();
 }
 
 function highlightMove(move) {
@@ -3525,45 +3637,50 @@ function drawMoveArrow(from, to, type = 'played') {
   
   if (!fromCoords || !toCoords) return;
   
-  // Shorten arrow to not cover pieces - make arrows shorter and cleaner
+  // Calculate direction and length
   const dx = toCoords.x - fromCoords.x;
   const dy = toCoords.y - fromCoords.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len === 0) return;
   
-  // Calculate arrow head size first (needed to determine line end point)
-  const headSize = squareSize * (type === 'best-critical' ? 0.32 : type === 'best' ? 0.28 : 0.26);
   const angle = Math.atan2(dy, dx);
-  const headAngle = Math.PI / 5; // 36 degrees
   
-  // Calculate where arrow head tip should be (destination square, shortened)
-  const shortenTo = squareSize * 0.4; // Distance from destination square center
-  const tipX = toCoords.x - (dx / len) * shortenTo;
-  const tipY = toCoords.y - (dy / len) * shortenTo;
+  // Arrow proportions - larger, more visible arrows
+  const headLength = squareSize * (type === 'best-critical' ? 0.45 : type === 'best' ? 0.40 : 0.35);
+  const headWidth = squareSize * (type === 'best-critical' ? 0.32 : type === 'best' ? 0.28 : 0.24);
   
-  // Calculate where the line should end (at the base of the arrow head)
-  // The base is behind the tip, so we move back along the line by headSize
-  const lineEndX = tipX - (dx / len) * headSize;
-  const lineEndY = tipY - (dy / len) * headSize;
+  // Shorten arrow so it doesn't cover pieces too much
+  const shortenFrom = squareSize * 0.20; // Start a bit away from source square center
+  const shortenTo = squareSize * 0.30; // End a bit before destination square center
   
-  // Start point of line (from square, shortened)
-  const shortenFrom = squareSize * 0.25;
+  // Calculate start and end points of the arrow shaft
   const startX = fromCoords.x + (dx / len) * shortenFrom;
   const startY = fromCoords.y + (dy / len) * shortenFrom;
+  const tipX = toCoords.x - (dx / len) * shortenTo; // Arrow tip position
+  const tipY = toCoords.y - (dy / len) * shortenTo;
   
-  // Create arrow line - stops exactly at base of arrow head
+  // End of shaft (where arrowhead starts)
+  const shaftEndX = tipX - (dx / len) * headLength;
+  const shaftEndY = tipY - (dy / len) * headLength;
+  
+  // Create arrow shaft (line)
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   line.setAttribute('x1', startX);
   line.setAttribute('y1', startY);
-  line.setAttribute('x2', lineEndX);
-  line.setAttribute('y2', lineEndY);
+  line.setAttribute('x2', shaftEndX);
+  line.setAttribute('y2', shaftEndY);
   line.classList.add('arrow-line', `arrow-${type}`);
   
-  // Create arrow head - tip points to destination, base connects to line end
+  // Create arrowhead - proper arrow shape with sharp point
+  // Calculate perpendicular direction for arrowhead width
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+  
+  // Arrowhead points: tip, left base, right base
   const headPoints = [
-    [tipX, tipY], // Tip of arrow (points to destination)
-    [lineEndX - headSize * 0.4 * Math.cos(angle - headAngle), lineEndY - headSize * 0.4 * Math.sin(angle - headAngle)],
-    [lineEndX - headSize * 0.4 * Math.cos(angle + headAngle), lineEndY - headSize * 0.4 * Math.sin(angle + headAngle)]
+    [tipX, tipY], // Sharp tip pointing to destination
+    [shaftEndX + perpX * headWidth / 2, shaftEndY + perpY * headWidth / 2], // Left base point
+    [shaftEndX - perpX * headWidth / 2, shaftEndY - perpY * headWidth / 2]  // Right base point
   ];
   
   const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -3839,7 +3956,7 @@ function updateEvaluation(cp, isFromStockfish = true) {
   evalBar.className = 'eval-fill'; // Keep the CSS class name
 }
 
-function playMoves() {
+async function playMoves() {
   if (isPlaying) return;
   
   isPlaying = true;
@@ -3851,66 +3968,99 @@ function playMoves() {
     playPauseBtn.title = 'Pause (Space)';
   }
   
-  // Speak intro summary if starting from beginning
-  if (currentMoveIndex === -1 && gameSummary) {
-    speakGameIntro();
-  }
-  
-  // Play first move if at start (before setting up interval)
+  // Speak intro summary if starting from beginning and wait for it to finish
   if (currentMoveIndex === -1) {
-    // Delay first move to let intro finish
-    setTimeout(() => {
-      if (isPlaying && currentMoveIndex < moves.length - 1) {
-        goToMove(0);
-      }
-    }, gameSummary ? 3000 : 500);
+    if (gameSummary || (isExampleGame() && window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.intro)) {
+      await speakGameIntro();
+    }
   }
   
-  // Set up interval to play moves automatically
-  playInterval = setInterval(() => {
-    if (!isPlaying) {
-      clearInterval(playInterval);
-      playInterval = null;
-      return;
-    }
-    
+  // Start playing moves - wait for each move's speech to finish before advancing
+  while (isPlaying) {
     if (currentMoveIndex < moves.length - 1) {
-      goToMove(currentMoveIndex + 1);
+      // Go to next move and wait for speech to finish
+      await goToMove(currentMoveIndex + 1);
+      
+      // Small delay between moves (even after speech finishes)
+      await new Promise(resolve => setTimeout(resolve, 300));
     } else {
+      // Reached end of game
       stopMoves();
+      break;
     }
-  }, 2000);
+  }
 }
 
 async function speakGameIntro() {
-  if (!voiceEnabled) return;
+  if (!voiceEnabled) return Promise.resolve();
   
   // Use demo intro if available
   let intro = '';
-  if (isExampleGame() && window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.intro) {
+  const isDemo = isExampleGame();
+  if (isDemo && window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.intro) {
     intro = window.EXAMPLE_GAME_COMMENTARY.intro;
   } else if (gameSummary) {
     // Create a friendly game intro
     intro = "Let's review this game! ";
     intro += gameSummary;
   } else {
-    return; // No intro available
+    return Promise.resolve(); // No intro available
+  }
+  
+  // For demo games, skip local voice and ElevenLabs, use browser TTS only
+  if (isDemo) {
+    console.log('🎙️ Demo game: using browser TTS only (skipping local voice and ElevenLabs)');
+    
+    // Use browser TTS (Web Speech API) - return promise that resolves when speech finishes
+    if (synth && selectedVoice) {
+      synth.cancel();
+      return new Promise((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(intro);
+        utterance.voice = selectedVoice;
+        utterance.rate = 1.0;
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve(); // Resolve even on error to not block playback
+        synth.speak(utterance);
+      });
+    }
+    return Promise.resolve();
+  }
+  
+  // For non-demo games, try local voice file first (if available)
+  if (typeof window.playLocalVoice === 'function') {
+    try {
+      console.log('🎙️ Checking for local voice file for intro...');
+      const localPlayed = await window.playLocalVoice(intro);
+      if (localPlayed) {
+        console.log('✅ Played local voice file for intro');
+        return Promise.resolve();
+      }
+      console.log('⚠️ No local voice file found for intro, trying ElevenLabs...');
+    } catch (error) {
+      console.error('❌ Error playing local voice for intro:', error);
+    }
   }
   
   // Use Donny Voice if selected and unlocked
   if (selectedVoiceType === 'donny' && premiumVoiceUnlocked && typeof window.speakWithElevenLabs === 'function') {
     const success = await window.speakWithElevenLabs(intro);
-    if (success) return;
+    if (success) return Promise.resolve();
   }
   
-  // Fallback to browser TTS
+  // Fallback to browser TTS - return promise that resolves when speech finishes
   if (synth && selectedVoice) {
     synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(intro);
-    utterance.voice = selectedVoice;
-    utterance.rate = 1.0;
-    synth.speak(utterance);
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(intro);
+      utterance.voice = selectedVoice;
+      utterance.rate = 1.0;
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve(); // Resolve even on error to not block playback
+      synth.speak(utterance);
+    });
   }
+  
+  return Promise.resolve();
 }
 
 function pauseMoves() {
@@ -3983,7 +4133,7 @@ function nextMove() {
 }
 
 async function speakMoveWithAnalysis(moveIndex) {
-  if (moveIndex < 0 || moveIndex >= moves.length) return;
+  if (moveIndex < 0 || moveIndex >= moves.length) return Promise.resolve();
   
   const move = moves[moveIndex];
   
@@ -4039,58 +4189,137 @@ async function speakMoveWithAnalysis(moveIndex) {
   }
   
   // Skip if no text
-  if (!text || text.trim().length === 0) return;
+  if (!text || text.trim().length === 0) return Promise.resolve();
+  
+  // Check if this is a demo game
+  const isDemo = isExampleGame();
+  
+  // For demo games, skip local voice and ElevenLabs, use browser TTS only
+  if (isDemo) {
+    console.log('🎙️ Demo game: using browser TTS only (skipping local voice and ElevenLabs)');
+    
+    // Use browser TTS (Web Speech API) - return promise that resolves when speech finishes
+    // Cancel any ongoing speech
+    synth.cancel();
+    
+    return new Promise((resolve) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // More natural "dude" voice parameters
+      utterance.rate = 1.0; // Natural conversational pace
+      utterance.pitch = 0.9; // Lower pitch for more masculine "dude" sound
+      utterance.volume = 1.0;
+      
+      // Add slight pause between sentences for naturalness
+      utterance.text = text.replace(/\. /g, '. '); // Natural pauses
+      
+      // Use selected voice (re-select if needed)
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      } else {
+        // Fallback: try to get a good voice on the fly
+        const voices = synth.getVoices();
+        const goodVoice = voices.find(v => 
+          v.lang.startsWith('en') && 
+          (v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Alex') || v.name.includes('Samantha'))
+        );
+        if (goodVoice) {
+          utterance.voice = goodVoice;
+          selectedVoice = goodVoice;
+          console.log('Selected voice on-the-fly:', goodVoice.name);
+        }
+      }
+      
+      // Add event listeners
+      utterance.onstart = () => {
+        console.log('Speaking:', text.substring(0, 50) + '...');
+      };
+      
+      utterance.onend = () => {
+        resolve(); // Resolve when speech finishes
+      };
+      
+      utterance.onerror = (e) => {
+        console.error('Speech error:', e);
+        resolve(); // Resolve even on error to not block playback
+      };
+      
+      synth.speak(utterance);
+    });
+  }
+  
+  // For non-demo games, try local voice file first (if available)
+  if (typeof window.playLocalVoice === 'function') {
+    try {
+      console.log('🎙️ Checking for local voice file...');
+      const localPlayed = await window.playLocalVoice(text);
+      if (localPlayed) {
+        console.log('✅ Played local voice file');
+        return Promise.resolve();
+      }
+      console.log('⚠️ No local voice file found, trying ElevenLabs...');
+    } catch (error) {
+      console.error('❌ Error playing local voice:', error);
+    }
+  }
   
   // Use Donny Voice if selected and unlocked
   if (selectedVoiceType === 'donny' && premiumVoiceUnlocked && typeof window.speakWithElevenLabs === 'function') {
     const success = await window.speakWithElevenLabs(text);
     if (success) {
       console.log('✓ Spoke with Donny Voice (ElevenLabs)');
-      return;
+      return Promise.resolve();
     }
   }
   
-  // Fallback to Web Speech API (browser TTS)
+  // Fallback to Web Speech API (browser TTS) - return promise that resolves when speech finishes
   // Cancel any ongoing speech
   synth.cancel();
   
-  const utterance = new SpeechSynthesisUtterance(text);
-  
-  // More natural "dude" voice parameters
-  utterance.rate = 1.0; // Natural conversational pace
-  utterance.pitch = 0.9; // Lower pitch for more masculine "dude" sound
-  utterance.volume = 1.0;
-  
-  // Add slight pause between sentences for naturalness
-  utterance.text = text.replace(/\. /g, '. '); // Natural pauses
-  
-  // Use selected voice (re-select if needed)
-  if (selectedVoice) {
-    utterance.voice = selectedVoice;
-  } else {
-    // Fallback: try to get a good voice on the fly
-    const voices = synth.getVoices();
-    const goodVoice = voices.find(v => 
-      v.lang.startsWith('en') && 
-      (v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Alex') || v.name.includes('Samantha'))
-    );
-    if (goodVoice) {
-      utterance.voice = goodVoice;
-      selectedVoice = goodVoice;
-      console.log('Selected voice on-the-fly:', goodVoice.name);
+  return new Promise((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // More natural "dude" voice parameters
+    utterance.rate = 1.0; // Natural conversational pace
+    utterance.pitch = 0.9; // Lower pitch for more masculine "dude" sound
+    utterance.volume = 1.0;
+    
+    // Add slight pause between sentences for naturalness
+    utterance.text = text.replace(/\. /g, '. '); // Natural pauses
+    
+    // Use selected voice (re-select if needed)
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+    } else {
+      // Fallback: try to get a good voice on the fly
+      const voices = synth.getVoices();
+      const goodVoice = voices.find(v => 
+        v.lang.startsWith('en') && 
+        (v.name.includes('Google') || v.name.includes('Microsoft') || v.name.includes('Alex') || v.name.includes('Samantha'))
+      );
+      if (goodVoice) {
+        utterance.voice = goodVoice;
+        selectedVoice = goodVoice;
+        console.log('Selected voice on-the-fly:', goodVoice.name);
+      }
     }
-  }
-  
-  // Add event listeners
-  utterance.onstart = () => {
-    console.log('Speaking:', text.substring(0, 50) + '...');
-  };
-  
-  utterance.onerror = (e) => {
-    console.error('Speech error:', e);
-  };
-  
-  synth.speak(utterance);
+    
+    // Add event listeners
+    utterance.onstart = () => {
+      console.log('Speaking:', text.substring(0, 50) + '...');
+    };
+    
+    utterance.onend = () => {
+      resolve(); // Resolve when speech finishes
+    };
+    
+    utterance.onerror = (e) => {
+      console.error('Speech error:', e);
+      resolve(); // Resolve even on error to not block playback
+    };
+    
+    synth.speak(utterance);
+  });
 }
 
 // Password Dialog Functions

@@ -291,6 +291,12 @@
         }
       })
       .then(() => {
+        // Load local voice system (for uploaded voice files)
+        return loadScript('local-voice.js').catch(() => {
+          console.log('ℹ️ Local voice system not found, skipping...');
+        });
+      })
+      .then(() => {
         // Load ElevenLabs TTS web version
         return loadScript('elevenlabs-tts-web.js').catch(() => {
           console.log('ℹ️ ElevenLabs TTS not found, will use browser voice');

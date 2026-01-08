@@ -1,5 +1,5 @@
 {
-  "name": "lichess-game-analyzer",
+  "name": "badamo-blunders",
   "version": "1.0.0",
   "description": "Chrome extension for analyzing Lichess games",
   "scripts": {

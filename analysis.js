@@ -98,44 +98,166 @@ function returnToGame() {
   }
 }
 
+// Track ongoing exploration analysis to cancel if needed
+let currentExplorationAnalysis = null;
+
 async function updateExplorationAnalysis() {
-  if (!stockfish) return;
+  // Check if Stockfish is initialized
+  if (!stockfish) {
+    console.warn('⚠️ Stockfish not available for exploration analysis');
+    const analysisText = document.getElementById('analysisText');
+    const analysisMove = document.getElementById('analysisMove');
+    if (analysisText) {
+      analysisText.textContent = 'Stockfish engine not loaded. Please wait for analysis to complete.';
+    }
+    if (analysisMove) {
+      analysisMove.textContent = '🔍 Exploring (Engine Loading...)';
+    }
+    return;
+  }
+  
+  // Cancel any previous exploration analysis
+  if (currentExplorationAnalysis) {
+    try {
+      stockfish.postMessage('stop');
+      currentExplorationAnalysis = null;
+      // Small delay to ensure stop is processed
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (e) {
+      console.warn('Error stopping previous analysis:', e);
+    }
+  }
   
   const fen = chess.fen();
   
-  // Quick analysis of the explored position
+  // Quick analysis of the explored position (use quickEval for faster interactive feedback)
   const analysisText = document.getElementById('analysisText');
   if (analysisText) {
     analysisText.textContent = 'Analyzing position...';
   }
   
   try {
-    const evalResult = await getPositionEvaluation(fen, -1);
+    // Use quickEval=true for faster analysis during exploration (depth 12 instead of 20)
+    // Store the promise so we can cancel if needed
+    currentExplorationAnalysis = getPositionEvaluation(fen, -1, true);
+    const evalResult = await currentExplorationAnalysis;
+    currentExplorationAnalysis = null;
+    
+    if (!evalResult) {
+      console.warn('⚠️ No evaluation result returned');
+      if (analysisText) {
+        analysisText.textContent = 'Analysis unavailable';
+      }
+      return;
+    }
+    
     const cp = evalResult.cp || 0;
+    const mate = evalResult.mate;
     
     // Update eval bar
-    updateEvaluation(cp, true);
+    updateEvaluation(cp, true, mate);
     
-    // Update analysis text
+    // Update analysis text with detailed info
     if (analysisText) {
-      const evalDisplay = (cp / 100).toFixed(2);
-      const sign = cp > 0 ? '+' : '';
-      const advantage = cp > 50 ? 'White is better' : cp < -50 ? 'Black is better' : 'Position is equal';
-      analysisText.textContent = `Eval: ${sign}${evalDisplay} • ${advantage}`;
+      let evalDisplay;
+      if (mate !== null && mate !== undefined) {
+        evalDisplay = `M${mate > 0 ? '+' : ''}${mate}`;
+      } else {
+        const evalValue = (cp / 100).toFixed(2);
+        evalDisplay = cp > 0 ? `+${evalValue}` : evalValue;
+      }
+      
+      let advantage = '';
+      if (mate !== null && mate !== undefined) {
+        advantage = mate > 0 ? 'White is winning' : 'Black is winning';
+      } else if (cp > 150) {
+        advantage = 'White is better';
+      } else if (cp < -150) {
+        advantage = 'Black is better';
+      } else if (cp > 50) {
+        advantage = 'White is slightly better';
+      } else if (cp < -50) {
+        advantage = 'Black is slightly better';
+      } else {
+        advantage = 'Position is equal';
+      }
+      
+      analysisText.textContent = `Eval: ${evalDisplay} • ${advantage}`;
       
       if (evalResult.bestMove) {
-        analysisText.textContent += ` • Best: ${evalResult.bestMove}`;
+        // Convert UCI to SAN if needed for display
+        let bestMoveDisplay = evalResult.bestMove;
+        if (evalResult.bestMove.length === 4 && /^[a-h][1-8][a-h][1-8]$/.test(evalResult.bestMove)) {
+          // UCI format - try to convert to SAN using the chess instance
+          try {
+            const tempChess = new Chess(fen);
+            const move = tempChess.move({
+              from: evalResult.bestMove.substring(0, 2),
+              to: evalResult.bestMove.substring(2, 4),
+              promotion: evalResult.bestMove.length > 4 ? evalResult.bestMove[4] : undefined
+            });
+            if (move) {
+              bestMoveDisplay = move.san;
+            }
+          } catch (e) {
+            // Keep UCI format if conversion fails
+          }
+        }
+        analysisText.textContent += ` • Best: ${bestMoveDisplay}`;
+      }
+      
+      // Show depth info for transparency
+      if (evalResult.depth) {
+        analysisText.textContent += ` • Depth: ${evalResult.depth}`;
       }
     }
     
-    // Draw best move arrow
+    // Draw best move arrow if we have a best move
     clearMoveHighlights();
-    if (evalResult.bestMove && evalResult.bestMove.length >= 4) {
-      drawBestMoveArrow(evalResult.bestMove, '');
+    if (evalResult.bestMove) {
+      let from = null;
+      let to = null;
+      
+      // Handle best move in various formats
+      if (evalResult.bestMove.length >= 4) {
+        // UCI format (e.g., "e2e4")
+        if (/^[a-h][1-8][a-h][1-8][qrnb]?$/.test(evalResult.bestMove)) {
+          from = evalResult.bestMove.substring(0, 2);
+          to = evalResult.bestMove.substring(2, 4);
+        }
+      }
+      
+      // If we still don't have from/to, try PV
+      if ((!from || !to) && evalResult.pv && evalResult.pv.length > 0) {
+        const firstPv = evalResult.pv[0];
+        if (firstPv && typeof firstPv === 'string' && firstPv.length >= 4) {
+          if (/^[a-h][1-8][a-h][1-8]/.test(firstPv)) {
+            from = firstPv.substring(0, 2);
+            to = firstPv.substring(2, 4);
+          }
+        }
+      }
+      
+      // Draw arrow if we have valid squares
+      if (from && to && /^[a-h][1-8]$/.test(from) && /^[a-h][1-8]$/.test(to)) {
+        drawMoveArrow(from, to, 'best');
+      } else {
+        console.log('⚠️ Could not parse best move for arrow:', evalResult.bestMove, 'PV:', evalResult.pv);
+      }
     }
     
+    console.log('✅ Exploration analysis complete:', {
+      cp,
+      mate,
+      bestMove: evalResult.bestMove,
+      depth: evalResult.depth
+    });
+    
   } catch (e) {
-    console.error('Error analyzing explored position:', e);
+    console.error('❌ Error analyzing explored position:', e);
+    if (analysisText) {
+      analysisText.textContent = 'Error analyzing position. Try again.';
+    }
   }
 }
 
@@ -1184,10 +1306,11 @@ async function analyzeGame() {
       const absLoss = Math.abs(evalLoss);
       
       // Lichess-like thresholds (in centipawns)
+      // Chess notation: ?? = blunder, ? = mistake, ?! = inaccuracy, ! = best, !! = brilliant
       if (absLoss > 200) {
-        annotation = '!!'; // Blunder
+        annotation = '??'; // Blunder
       } else if (absLoss > 100) {
-        annotation = '!'; // Mistake
+        annotation = '?'; // Mistake
       } else if (absLoss > 50) {
         annotation = '?!'; // Inaccuracy
       } else if (absLoss < 10 && bestMoveSAN === move.san) {
@@ -1239,7 +1362,7 @@ async function analyzeGame() {
     const player = isWhiteMove ? 'White' : 'Black';
     
     // Detect key moments
-    if (evaluation.annotation === '!!') {
+    if (evaluation.annotation === '??') {
       // Blunder
       keyMoments.push({
         moveIndex: i,
@@ -1251,7 +1374,7 @@ async function analyzeGame() {
         bestMove: evaluation.bestMove,
         description: `${player} blunders with ${move.san}. ${evaluation.bestMove ? `${evaluation.bestMove} was much better.` : ''}`
       });
-    } else if (evaluation.annotation === '!' && evalSwing > 100) {
+    } else if (evaluation.annotation === '?') {
       // Mistake
       keyMoments.push({
         moveIndex: i,
@@ -1296,9 +1419,9 @@ async function analyzeGame() {
     }
     
     // Count mistakes/blunders
-    if (evaluation.annotation === '!!') {
+    if (evaluation.annotation === '??') {
       totalBlunders++;
-    } else if (evaluation.annotation === '!') {
+    } else if (evaluation.annotation === '?') {
       totalMistakes++;
     } else if (evaluation.annotation === '?!') {
       totalInaccuracies++;
@@ -1372,21 +1495,61 @@ function displayKeyMoments() {
 
 function getKeyMomentIcon(type) {
   switch(type) {
-    case 'blunder': return '💥';
-    case 'mistake': return '⚠️';
-    case 'turning-point': return '🔄';
-    case 'brilliant': return '✨';
-    default: return '📍';
+    case 'blunder': 
+    case 'missedMate': 
+      return '✕'; // X icon for blunders
+    case 'mistake': 
+      return '×'; // Multiplication sign for mistakes
+    case 'inaccuracy': 
+      return '?'; // Question mark for inaccuracies
+    case 'brilliant': 
+      return '★'; // Star symbol for brilliant moves
+    case 'best': 
+      return '✓'; // Checkmark for best moves
+    case 'great': 
+      return '!'; // Exclamation for great moves
+    case 'good': 
+      return '○'; // Circle for good moves
+    case 'book': 
+      return '◉'; // Filled circle for book moves
+    case 'opening': 
+      return '▶'; // Play symbol for opening moves
+    case 'victory': 
+      return '★'; // Star for victory moves (same as brilliant for consistency)
+    case 'turning-point': 
+      return '↻'; // Circular arrow for turning points
+    default: 
+      return '•'; // Bullet point for other moments
   }
 }
 
 function getKeyMomentLabel(type) {
   switch(type) {
-    case 'blunder': return 'Blunder';
-    case 'mistake': return 'Mistake';
-    case 'turning-point': return 'Turning Point';
-    case 'brilliant': return 'Brilliant';
-    default: return 'Key Move';
+    case 'blunder': 
+    case 'missedMate': 
+      return 'Blunder';
+    case 'mistake': 
+      return 'Mistake';
+    case 'inaccuracy': 
+      return 'Inaccuracy';
+    case 'brilliant': 
+      return 'Brilliant';
+    case 'best': 
+      return 'Best Move';
+    case 'great': 
+      return 'Great Move';
+    case 'good': 
+      return 'Good Move';
+    case 'book': 
+      return 'Book Move';
+    case 'opening': 
+      return 'Opening';
+    case 'victory': 
+      return 'Victory';
+    case 'turning-point': 
+      return 'Turning Point';
+    default: 
+      return 'Key Move';
   }
 }
 
@@ -1491,16 +1654,16 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
             }
           }
           
-          if (pvMatch && !quickEval) {
-            // Only extract best move if we're doing full analysis
+          // Extract best move from PV (even for quickEval during exploration)
+          if (pvMatch) {
             // Split PV and filter out move numbers and game results
             pv = pvMatch[1].split(' ').filter(move => {
               if (/^\d+\.?$/.test(move)) return false;
               if (['1-0', '0-1', '1/2-1/2', '*'].includes(move)) return false;
               return move.length >= 2;
             });
-            // Get first valid move as best move
-            if (pv.length > 0) {
+            // Get first valid move as best move (always extract for exploration)
+            if (pv.length > 0 && !bestMove) {
               bestMove = pv[0];
             }
           }
@@ -1508,17 +1671,19 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
           // Stop when we have enough depth - use higher depth for better accuracy (like Lichess)
           const requiredDepth = quickEval ? 10 : 18; // Increased from 6/12 to 10/18 for better accuracy
           if (depth >= requiredDepth && evaluation) {
+            // For exploration, also make sure we have a best move before finishing
+            if (quickEval && moveIndex === -1 && !bestMove && pv.length === 0) {
+              // Continue a bit longer to get best move
+              return;
+            }
             clearTimeout(timeout);
             finishAnalysis('depth reached');
           }
         } else if (message.startsWith('bestmove')) {
-          // Engine finished analyzing
-          if (!quickEval) {
-            // Only extract best move if we're doing full analysis
+          // Engine finished analyzing - always extract best move
           const bestMoveMatch = message.match(/bestmove (\S+)/);
           if (bestMoveMatch && !bestMove) {
             bestMove = bestMoveMatch[1];
-            }
           }
           clearTimeout(timeout);
           finishAnalysis('bestmove');
@@ -1526,13 +1691,38 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
       }
     };
     
-    // Set the handler
-    stockfish.onmessage = handler;
-    
-    // Stop any previous analysis and start new one
+    // Stop any previous analysis first
     stockfish.postMessage('stop');
-    stockfish.postMessage(`position fen ${fen}`);
-    stockfish.postMessage(`go depth ${targetDepth}`);
+    
+    // Small delay to ensure stop command is processed before setting new handler
+    setTimeout(() => {
+      // Set the handler before starting new analysis
+      stockfish.onmessage = handler;
+      
+      // Validate FEN format
+      const fenParts = fen.split(' ');
+      if (fenParts.length < 2) {
+        console.error(`❌ Invalid FEN (missing active color): ${fen}`);
+        finishAnalysis('invalid fen');
+        return;
+      }
+      
+      // Ensure FEN has all required fields
+      let fullFen = fen;
+      if (fenParts.length < 6) {
+        const position = fenParts[0];
+        const activeColor = fenParts[1] || 'w';
+        const castling = fenParts[2] || '-';
+        const enPassant = fenParts[3] || '-';
+        const halfmove = fenParts[4] || '0';
+        const fullmove = fenParts[5] || '1';
+        fullFen = `${position} ${activeColor} ${castling} ${enPassant} ${halfmove} ${fullmove}`;
+      }
+      
+      // Set position and start analysis
+      stockfish.postMessage(`position fen ${fullFen}`);
+      stockfish.postMessage(`go depth ${targetDepth}`);
+    }, 50);
     
     if (moveIndex % 10 === 0 || moveIndex === 0) {
       console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 30)}...`);
@@ -1872,7 +2062,7 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
     !['1-0', '0-1', '1/2-1/2', '*'].includes(bestMove);
   
   // Move quality commentary - match voice script style with notation
-  if (evaluation.annotation === '!!') {
+  if (evaluation.annotation === '??') {
     // Blunder - match voice script phrases
     const blunderPhrases = [
       `Oh no. ${move.san} is a blunder. `,
@@ -1899,9 +2089,8 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
       commentary += betterPhrases[Math.floor(Math.random() * betterPhrases.length)];
       commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
-  } else if (evaluation.annotation === '!') {
-    // This is a mistake (annotation '!' means mistake, not best move)
-    // Never give positive feedback on mistakes
+  } else if (evaluation.annotation === '?') {
+    // Mistake
     const mistakePhrases = [
       `Mistake! ${move.san} loses material. `,
       `${move.san}. That's a mistake that gives the opponent an advantage. `,
@@ -1912,15 +2101,18 @@ function generateMoveCommentary(moveIndex, move, evaluation, chessInstance) {
       `Not the best. ${move.san} gives the opponent chances. `
     ];
     commentary += mistakePhrases[Math.floor(Math.random() * mistakePhrases.length)];
-      if (hasBetterMove) {
+    if (hasBetterMove) {
       const betterMistakePhrases = [
         `${bestMove} would have been stronger. `,
         `Should've played ${bestMove} instead. `,
         `${bestMove} was the better choice. `
       ];
       commentary += betterMistakePhrases[Math.floor(Math.random() * betterMistakePhrases.length)];
-        commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
+      commentary += explainBestMoveDetailed(bestMove, move, evaluation, prevEval);
     }
+  } else if (evaluation.annotation === '!') {
+    // Best move
+    commentary += `Excellent move! ${move.san} is the engine's top choice. `;
   } else if (evaluation.annotation === '?!') {
     // Inaccuracy - match voice script
     const inaccuracyPhrases = [
@@ -2224,37 +2416,40 @@ function updateMoveAnnotation(moveIndex, evaluation) {
   
   const iconEl = moveCell.querySelector('.move-icon');
   
-  if (evaluation.annotation === '!!') {
+  // Chess notation: ?? = blunder, ? = mistake, ?! = inaccuracy, ! = best, !! = brilliant
+  if (evaluation.annotation === '??') {
     moveCell.classList.add('blunder');
     if (iconEl) iconEl.textContent = '??';
-  } else if (evaluation.annotation === '!') {
-    // Could be mistake or best move
-    const prevEval = moveIndex > 0 ? analysisData[moveIndex - 1] : null;
-    const evalChange = prevEval ? Math.abs((evaluation.cp || 0) - (prevEval.cp || 0)) : 0;
-    if (evalChange > 100) {
-      moveCell.classList.add('mistake');
-      if (iconEl) iconEl.textContent = '?';
-    } else {
-      moveCell.classList.add('best');
-      if (iconEl) iconEl.textContent = '!';
-    }
+  } else if (evaluation.annotation === '?') {
+    moveCell.classList.add('mistake');
+    if (iconEl) iconEl.textContent = '?';
   } else if (evaluation.annotation === '?!') {
     moveCell.classList.add('inaccuracy');
     if (iconEl) iconEl.textContent = '?!';
+  } else if (evaluation.annotation === '!') {
+    moveCell.classList.add('best');
+    if (iconEl) iconEl.textContent = '!';
+  } else if (evaluation.annotation === '!!') {
+    moveCell.classList.add('brilliant');
+    if (iconEl) iconEl.textContent = '!!';
   }
 }
 
 function getAnnotationClass(annotation) {
-  if (annotation === '!!') return 'blunder';
-  if (annotation === '!') return 'best';
+  if (annotation === '??') return 'blunder';
+  if (annotation === '?') return 'mistake';
   if (annotation === '?!') return 'inaccuracy';
+  if (annotation === '!') return 'best';
+  if (annotation === '!!') return 'brilliant';
   return 'good';
 }
 
 function getAnnotationTitle(annotation) {
-  if (annotation === '!!') return 'Blunder';
-  if (annotation === '!') return 'Best move / Mistake';
+  if (annotation === '??') return 'Blunder';
+  if (annotation === '?') return 'Mistake';
   if (annotation === '?!') return 'Inaccuracy';
+  if (annotation === '!') return 'Best move';
+  if (annotation === '!!') return 'Brilliant';
   return '';
 }
 
@@ -2529,39 +2724,61 @@ function drawMoveArrow(from, to, type = 'played') {
   const boardRect = boardEl.getBoundingClientRect();
   const squareSize = boardRect.width / 8;
   
+  // Ensure SVG matches board size exactly
+  arrowsSvg.setAttribute('width', boardRect.width);
+  arrowsSvg.setAttribute('height', boardRect.height);
+  arrowsSvg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+  
   // Convert square names to coordinates
   const fromCoords = squareToCoords(from, squareSize);
   const toCoords = squareToCoords(to, squareSize);
   
   if (!fromCoords || !toCoords) return;
   
-  // Shorten arrow to not cover pieces
+  // Calculate direction and length
   const dx = toCoords.x - fromCoords.x;
   const dy = toCoords.y - fromCoords.y;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len === 0) return;
-  const shortenBy = squareSize * 0.35;
   
-  const startX = fromCoords.x + (dx / len) * shortenBy;
-  const startY = fromCoords.y + (dy / len) * shortenBy;
-  const endX = toCoords.x - (dx / len) * shortenBy;
-  const endY = toCoords.y - (dy / len) * shortenBy;
+  const angle = Math.atan2(dy, dx);
   
-  // Create arrow line
+  // Arrow proportions - larger, more visible arrows
+  const headLength = squareSize * (type === 'best-critical' ? 0.45 : type === 'best' ? 0.40 : 0.35);
+  const headWidth = squareSize * (type === 'best-critical' ? 0.32 : type === 'best' ? 0.28 : 0.24);
+  
+  // Shorten arrow so it doesn't cover pieces too much
+  const shortenFrom = squareSize * 0.20; // Start a bit away from source square center
+  const shortenTo = squareSize * 0.30; // End a bit before destination square center
+  
+  // Calculate start and end points of the arrow shaft
+  const startX = fromCoords.x + (dx / len) * shortenFrom;
+  const startY = fromCoords.y + (dy / len) * shortenFrom;
+  const tipX = toCoords.x - (dx / len) * shortenTo; // Arrow tip position
+  const tipY = toCoords.y - (dy / len) * shortenTo;
+  
+  // End of shaft (where arrowhead starts)
+  const shaftEndX = tipX - (dx / len) * headLength;
+  const shaftEndY = tipY - (dy / len) * headLength;
+  
+  // Create arrow shaft (line)
   const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   line.setAttribute('x1', startX);
   line.setAttribute('y1', startY);
-  line.setAttribute('x2', endX);
-  line.setAttribute('y2', endY);
+  line.setAttribute('x2', shaftEndX);
+  line.setAttribute('y2', shaftEndY);
   line.classList.add('arrow-line', `arrow-${type}`);
   
-  // Create arrow head
-  const headSize = squareSize * (type === 'best' ? 0.3 : 0.25);
-  const angle = Math.atan2(dy, dx);
+  // Create arrowhead - proper arrow shape with sharp point
+  // Calculate perpendicular direction for arrowhead width
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+  
+  // Arrowhead points: tip, left base, right base
   const headPoints = [
-    [endX, endY],
-    [endX - headSize * Math.cos(angle - Math.PI / 6), endY - headSize * Math.sin(angle - Math.PI / 6)],
-    [endX - headSize * Math.cos(angle + Math.PI / 6), endY - headSize * Math.sin(angle + Math.PI / 6)]
+    [tipX, tipY], // Sharp tip pointing to destination
+    [shaftEndX + perpX * headWidth / 2, shaftEndY + perpY * headWidth / 2], // Left base point
+    [shaftEndX - perpX * headWidth / 2, shaftEndY - perpY * headWidth / 2]  // Right base point
   ];
   
   const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
@@ -2588,7 +2805,7 @@ function drawBestMoveArrow(bestMoveUCI, annotation) {
   
   // Determine arrow type based on annotation
   let arrowType = 'best';
-  if (annotation === '!!' || annotation === '!') {
+  if (annotation === '??' || annotation === '?') {
     arrowType = 'best-critical'; // More prominent for blunders/mistakes
   }
   
@@ -2674,14 +2891,18 @@ function updateMoveAnalysisPanel(moveIndex) {
   
   // Set icon based on annotation
   if (analysis) {
-    if (analysis.annotation === '!!') {
+    if (analysis.annotation === '??') {
       iconEl.textContent = '💥';
-    } else if (analysis.annotation === '!') {
+    } else if (analysis.annotation === '?') {
       iconEl.textContent = '⚠️';
     } else if (analysis.annotation === '?!') {
       iconEl.textContent = '❓';
-    } else {
+    } else if (analysis.annotation === '!') {
       iconEl.textContent = '✓';
+    } else if (analysis.annotation === '!!') {
+      iconEl.textContent = '⭐';
+    } else {
+      iconEl.textContent = '📊';
     }
   } else {
     iconEl.textContent = '📊';
@@ -2721,9 +2942,9 @@ function updateMoveAnalysisPanel(moveIndex) {
     updateEvaluation(0, false);
   }
   
-  // Best move hint
+  // Best move hint - show for moves with errors (blunders, mistakes, inaccuracies)
   if (analysis && analysis.bestMove && analysis.bestMove !== move.san && 
-      (analysis.annotation === '!!' || analysis.annotation === '!' || analysis.annotation === '?!')) {
+      (analysis.annotation === '??' || analysis.annotation === '?' || analysis.annotation === '?!')) {
     hintMoveEl.textContent = analysis.bestMove;
     hintEl.style.display = 'flex';
   } else {
@@ -2902,7 +3123,24 @@ async function speakGameIntro() {
   let intro = "Let's review this game! ";
   intro += gameSummary;
   
-  // Try ElevenLabs first
+  // Try local voice file first (if available)
+  if (typeof window.playLocalVoice === 'function') {
+    try {
+      console.log('🎙️ Checking for local voice file for intro...');
+      const localPlayed = await window.playLocalVoice(intro);
+      if (localPlayed) {
+        console.log('✅ Played local voice file for intro');
+        // Wait a bit after speech finishes
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return;
+      }
+      console.log('⚠️ No local voice file found for intro, trying ElevenLabs...');
+    } catch (error) {
+      console.error('❌ Error playing local voice for intro:', error);
+    }
+  }
+  
+  // Try ElevenLabs (premium voice with agent)
   if (typeof window.speakWithElevenLabs === 'function') {
     try {
       const speechPromise = window.speakWithElevenLabs(intro);
@@ -3117,7 +3355,22 @@ async function speakMoveWithAnalysis(moveIndex) {
   // Skip if no text
   if (!text || text.trim().length === 0) return;
   
-  // Try ElevenLabs first (premium voice with agent)
+  // Try local voice file first (if available)
+  if (typeof window.playLocalVoice === 'function') {
+    try {
+      console.log('🎙️ Checking for local voice file...');
+      const localPlayed = await window.playLocalVoice(text);
+      if (localPlayed) {
+        console.log('✅ Played local voice file');
+        return;
+      }
+      console.log('⚠️ No local voice file found, trying ElevenLabs...');
+    } catch (error) {
+      console.error('❌ Error playing local voice:', error);
+    }
+  }
+  
+  // Try ElevenLabs (premium voice with agent)
   if (typeof window.speakWithElevenLabs === 'function') {
     try {
       console.log('🎙️ Attempting to speak with ElevenLabs...');

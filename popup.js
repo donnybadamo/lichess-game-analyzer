@@ -85,4 +85,3 @@ document.getElementById('saveSecretsBtn').addEventListener('click', async () => 
     secretsStatus.textContent = 'Error: ' + error.message;
   }
 });
-

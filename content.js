@@ -714,7 +714,7 @@
   });
 
   // Initial check
-  console.log('Lichess Analyzer extension loaded');
+  console.log('Badamo Blunders extension loaded');
 
 })();
 

@@ -162,6 +162,19 @@ loadScript('libs/jquery.min.js').then(() => {
   });
 }).then(() => {
   
+  // Load local voice system first (for uploaded voice files)
+  console.log('Loading local voice system...');
+  return loadScript('local-voice.js', true).then(() => {
+    console.log('✓ Local voice system loaded');
+    // Initialize voice DB
+    if (typeof window.initVoiceDB === 'function') {
+      window.initVoiceDB().catch(err => {
+        console.warn('⚠️ Failed to initialize voice DB:', err.message);
+      });
+    }
+  });
+}).then(() => {
+  
   // Load ElevenLabs TTS script
   console.log('Loading ElevenLabs TTS...');
   return loadScript('elevenlabs-tts.js');

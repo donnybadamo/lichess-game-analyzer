@@ -1,4 +1,4 @@
-# Lichess Game Analyzer Chrome Extension
+# Badamo Blunders
 
 A Chrome extension that automatically analyzes your finished Lichess games with chess.com-style annotations and natural voice narration.
 
@@ -73,11 +73,11 @@ Alternatively, you can:
 
 ## Move Annotations
 
-- **!!** (Red): Blunder - major mistake
-- **!** (Orange): Mistake - significant error
+- **??** (Red): Blunder - major mistake
+- **?** (Orange): Mistake - significant error
 - **?!** (Yellow): Inaccuracy - minor error
 - **!** (Green): Best move
-- **=** (Blue): Good move
+- **!!** (Gold): Brilliant move
 
 ## Technical Details
 

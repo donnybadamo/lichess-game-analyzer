@@ -146,7 +146,7 @@ body {
   flex-shrink: 0;
   box-sizing: border-box;
   /* Height includes player bars + board - calculate total height */
-  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 400px) * 0.70)), 900px) + 88px);
+  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 480px) * 0.70)), 900px) + 88px);
   margin-top: 20px;
   align-self: stretch;
 }
@@ -162,7 +162,7 @@ body {
   margin: 4px 0;
   width: 100%;
   /* Scale with board - use same width calculation */
-  max-width: clamp(450px, min(calc(100vh - 200px), calc((100vw - 400px) * 0.85)), 900px);
+  max-width: clamp(450px, min(calc(100vh - 200px), calc((100vw - 480px) * 0.85)), 900px);
 }
 
 .player-bar .player-name {
@@ -194,7 +194,7 @@ body {
 .board-area {
   position: relative;
   /* Dynamic board sizing like Lichess - scales with available space, accounting for eval bar and panel */
-  width: clamp(450px, min(calc(100vh - 200px), calc((100vw - 380px) * 0.70)), 900px);
+  width: clamp(450px, min(calc(100vh - 200px), calc((100vw - 480px) * 0.70)), 900px);
   aspect-ratio: 1;
   flex-shrink: 0;
   flex-grow: 0;
@@ -204,9 +204,9 @@ body {
 
 .eval-bar {
   /* Scale with board - roughly 3% of board width calculation */
-  width: clamp(24px, calc((min(calc(100vh - 200px), calc((100vw - 400px) * 0.70)) * 0.035)), 40px);
+  width: clamp(24px, calc((min(calc(100vh - 200px), calc((100vw - 480px) * 0.70)) * 0.035)), 40px);
   /* Height matches board section total height (board + player bars) */
-  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 400px) * 0.70)), 900px) + 88px);
+  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 480px) * 0.70)), 900px) + 88px);
   background: linear-gradient(to bottom, #2a2a2a 0%, #2a2a2a 50%, #e8e4dc 50%, #e8e4dc 100%);
   border-radius: 4px;
   position: relative;
@@ -290,61 +290,69 @@ body {
   z-index: 10;
 }
 
-/* Played move arrow (orange) - more visible but not highlighter-like */
+/* Played move arrow (orange) - clean, visible arrow */
 .move-arrows .arrow-line {
-  stroke: var(--primary);
-  stroke-width: 10;
+  stroke: #d67a45;
+  stroke-width: 8;
   stroke-linecap: round;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 2px rgba(214, 122, 69, 0.4));
+  stroke-linejoin: round;
+  opacity: 0.9;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 
 .move-arrows .arrow-head {
-  fill: var(--primary);
-  opacity: 0.85;
-  filter: drop-shadow(0 0 2px rgba(214, 122, 69, 0.4));
+  fill: #d67a45;
+  stroke: #b8653a;
+  stroke-width: 1.5;
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 
 .move-arrows .arrow-line.arrow-played {
-  stroke: var(--primary);
-  stroke-width: 10;
-  opacity: 0.85;
-  filter: drop-shadow(0 0 2px rgba(214, 122, 69, 0.4));
+  stroke: #d67a45;
+  stroke-width: 8;
+  opacity: 0.9;
 }
 
 .move-arrows .arrow-head.arrow-played {
-  fill: var(--primary);
-  opacity: 0.85;
-  filter: drop-shadow(0 0 2px rgba(214, 122, 69, 0.4));
+  fill: #d67a45;
+  stroke: #b8653a;
+  stroke-width: 1.5;
+  opacity: 0.95;
 }
 
 /* Best move arrow (green) - what should have been played */
 .move-arrows .arrow-line.arrow-best {
-  stroke: var(--success);
-  stroke-width: 12;
+  stroke: #52c41a;
+  stroke-width: 9;
+  stroke-dasharray: 8 6;
   opacity: 0.9;
-  stroke-dasharray: 8 4;
-  filter: drop-shadow(0 0 3px rgba(129, 182, 76, 0.5));
+  filter: drop-shadow(0 1px 3px rgba(82, 196, 26, 0.4));
 }
 
 .move-arrows .arrow-head.arrow-best {
-  fill: var(--success);
-  opacity: 0.9;
-  filter: drop-shadow(0 0 3px rgba(129, 182, 76, 0.5));
+  fill: #52c41a;
+  stroke: #389e0d;
+  stroke-width: 1.5;
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 3px rgba(82, 196, 26, 0.4));
 }
 
 /* Critical best move arrow (for blunders/mistakes - more prominent) */
 .move-arrows .arrow-line.arrow-best-critical {
-  stroke: var(--success);
-  stroke-width: 16;
+  stroke: #52c41a;
+  stroke-width: 11;
+  stroke-dasharray: 10 5;
   opacity: 0.95;
-  filter: drop-shadow(0 0 4px rgba(129, 182, 76, 0.6));
+  filter: drop-shadow(0 2px 4px rgba(82, 196, 26, 0.5));
 }
 
 .move-arrows .arrow-head.arrow-best-critical {
-  fill: var(--success);
-  opacity: 0.95;
-  filter: drop-shadow(0 0 4px rgba(129, 182, 76, 0.6));
+  fill: #52c41a;
+  stroke: #389e0d;
+  stroke-width: 2;
+  opacity: 1;
+  filter: drop-shadow(0 2px 4px rgba(82, 196, 26, 0.5));
 }
 
 .highlight-from {
@@ -608,14 +616,14 @@ body {
   background: var(--bg-surface);
   overflow: hidden; /* Keep hidden for scrolling, but nav-controls can overflow */
   /* Height matches board section total height (board + player bars) */
-  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 400px) * 0.70)), 900px) + 88px);
+  height: calc(clamp(450px, min(calc(100vh - 200px), calc((100vw - 480px) * 0.70)), 900px) + 88px);
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   position: relative;
   margin-top: 20px;
-  width: 320px;
+  width: 420px;
   flex-shrink: 0;
   align-self: stretch;
   min-height: 0;
@@ -1099,35 +1107,93 @@ body {
   text-align: center;
 }
 
-.moment-chip.blunder .moment-icon,
-.moment-chip.missedMate .moment-icon {
+.moment-chip .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Blunder icons - red/X */
+.moment-chip.blunder .chip-icon,
+.moment-chip.missedMate .chip-icon {
+  font-size: 18px;
+  font-weight: 900;
   color: var(--error);
 }
 
-.moment-chip.mistake .moment-icon {
+/* Mistake icons - orange/X */
+.moment-chip.mistake .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--warning);
 }
 
-.moment-chip.inaccuracy .moment-icon {
+/* Inaccuracy icons - yellow/question */
+.moment-chip.inaccuracy .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--warning);
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
-.moment-chip.brilliant .moment-icon {
+/* Brilliant icons - gold/star */
+.moment-chip.brilliant .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--brilliant);
 }
 
-.moment-chip.best .moment-icon,
-.moment-chip.great .moment-icon {
+/* Best move icons - green/checkmark */
+.moment-chip.best .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--success);
 }
 
-.moment-chip.turning-point .moment-icon {
+.moment-chip.great .chip-icon {
   font-size: 16px;
+  font-weight: 700;
+  color: var(--success);
 }
 
-.moment-chip .chip-icon {
-  font-size: 14px;
+.moment-chip.good .chip-icon {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--success);
+  opacity: 0.85;
+}
+
+.moment-chip.book .chip-icon {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+  opacity: 0.7;
+}
+
+.moment-chip.opening .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.moment-chip.victory .chip-icon {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--brilliant);
+}
+
+/* Turning point icons - blue/circular arrow */
+.moment-chip.turning-point .chip-icon {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary);
 }
 
 .moment-chip .chip-move {
@@ -1203,7 +1269,7 @@ body {
   color: var(--foreground);
 }
 
-.move-cell:hover {
+.move-cell:hover:not(.active) {
   background: var(--bg-hover);
   border: 1px solid var(--primary);
   transform: translateY(-1px);
@@ -1213,9 +1279,12 @@ body {
 .move-cell.active {
   background: var(--primary);
   color: var(--primary-foreground);
+  border: 1px solid var(--primary);
+  box-shadow: 0 2px 8px rgba(214, 122, 69, 0.3);
 }
 
-.move-cell.active .white-dot {
+.move-cell.active .white-dot,
+.move-cell.active .black-dot {
   border-color: var(--primary-foreground);
 }
 
