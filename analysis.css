@@ -125,22 +125,26 @@ body {
 .board-section {
   display: flex;
   flex-direction: column;
-  padding: 20px;
+  padding: 24px;
   background: var(--background);
   overflow: hidden;
   border-right: 1px solid var(--border);
   border-radius: 8px 0 0 8px;
+  justify-content: center;
+  align-items: center;
 }
 
 .player-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  margin: 8px 0;
+  margin: 12px 0;
+  width: 100%;
+  max-width: 600px;
 }
 
 .player-bar .player-name {
@@ -158,9 +162,12 @@ body {
 
 .board-with-eval {
   display: flex;
-  gap: 8px;
-  align-items: stretch;
+  gap: 12px;
+  align-items: center;
   justify-content: center;
+  flex: 1;
+  width: 100%;
+  max-width: 600px;
 }
 
 .eval-bar {
@@ -228,13 +235,13 @@ body {
 
 .board-area {
   position: relative;
-  /* Responsive: scale based on available height, with reasonable min/max */
-  /* Primary constraint: viewport height minus header/controls/padding */
-  width: clamp(300px, min(calc(100vh - 320px), calc(100vw - 500px)), 600px);
+  /* Make board larger and more prominent */
+  width: clamp(400px, min(calc(100vh - 280px), calc((100vw - 500px) * 0.7)), 700px);
   aspect-ratio: 1;
   flex-shrink: 0;
   flex-grow: 0;
   transition: width 0.3s ease;
+  margin: 0 auto;
 }
 
 #board {
@@ -320,15 +327,19 @@ body {
   display: flex;
   justify-content: center;
   gap: 8px;
-  padding: 12px 0 6px 0;
-  margin-top: 6px;
+  padding: 16px 0 8px 0;
+  margin-top: 12px;
+  width: 100%;
+  max-width: 600px;
 }
 
 .nav-controls-secondary {
   display: flex;
   justify-content: center;
   gap: 8px;
-  padding: 6px 0 12px 0;
+  padding: 8px 0 16px 0;
+  width: 100%;
+  max-width: 600px;
 }
 
 .nav-btn {
@@ -418,10 +429,10 @@ body {
 
 /* Current Move Analysis */
 .move-analysis {
-  padding: 12px 16px;
+  padding: 16px 20px;
   background: var(--background);
   border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .analysis-content {
@@ -524,8 +535,8 @@ body {
 }
 
 .key-moments-section {
-  padding: 12px 16px;
-  margin-bottom: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
 }
 
 .key-moments-section h3 {
@@ -615,8 +626,8 @@ body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  padding: 12px 16px;
-  margin-top: 8px;
+  padding: 16px 20px;
+  margin-top: 12px;
 }
 
 .moves-section h3 {
@@ -738,9 +749,9 @@ body {
 
 /* Eval Graph */
 .eval-graph-section {
-  padding: 12px 16px;
+  padding: 16px 20px;
   border-top: 1px solid var(--border);
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 #evalGraph {
