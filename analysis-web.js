@@ -331,6 +331,9 @@ async function initializeAnalysisPage() {
   // Setup event listeners first
   setupEventListeners();
   
+  // Initialize board on page load (show starting position)
+  await initializeBoardWithStartingPosition();
+  
   // Get PGN from URL parameters
   const urlParams = new URLSearchParams(window.location.search);
   let pgn = urlParams.get('pgn');
@@ -493,8 +496,10 @@ async function initializeGame(pgn) {
     moves = chess.history({ verbose: true });
     console.log('Moves extracted:', moves.length);
     
-    // Initialize board - wait for Chessboard to be available
-    if (typeof window.Chessboard === 'undefined') {
+    // Reuse existing board if already initialized, otherwise initialize new one
+    if (!board) {
+      // Initialize board - wait for Chessboard to be available
+      if (typeof window.Chessboard === 'undefined') {
       console.error('Chessboard not available. Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('chess')));
       throw new Error('Chessboard library not loaded');
     }
@@ -636,10 +641,25 @@ async function initializeGame(pgn) {
       });
       throw err;
     }
+    } else {
+      // Board already exists, just update position
+      console.log('Reusing existing board');
+      board.position(chess.fen());
+    }
 
     // Initialize Stockfish
     console.log('Initializing Stockfish...');
     await initializeStockfish();
+    
+    // Replace intro with game analysis
+    const analysisMove = document.getElementById('analysisMove');
+    const analysisText = document.getElementById('analysisText');
+    if (analysisMove) {
+      analysisMove.textContent = 'Analyzing game...';
+    }
+    if (analysisText) {
+      analysisText.textContent = 'Loading move-by-move analysis...';
+    }
     
     // Display moves
     displayMoves();
@@ -811,6 +831,67 @@ function setupEventListeners() {
 function goToEnd() {
   if (moves.length > 0) {
     goToMove(moves.length - 1);
+  }
+}
+
+async function initializeBoardWithStartingPosition() {
+  // Initialize board with starting position on page load
+  if (board) {
+    // Board already initialized, just reset to start
+    board.position('start');
+    return;
+  }
+  
+  if (typeof window.Chessboard === 'undefined' || typeof window.$ === 'undefined') {
+    console.warn('Board libraries not ready yet');
+    return;
+  }
+  
+  try {
+    const boardElement = document.getElementById('board');
+    if (!boardElement) {
+      console.warn('Board element not found');
+      return;
+    }
+    
+    // Create a simple chess instance for the starting position
+    if (!chess) {
+      chess = new window.Chess();
+    }
+    
+    const pieceTheme = (piece) => {
+      const pieceMap = {
+        'wK': 'white-king',
+        'wQ': 'white-queen',
+        'wR': 'white-rook',
+        'wB': 'white-bishop',
+        'wN': 'white-knight',
+        'wP': 'white-pawn',
+        'bK': 'black-king',
+        'bQ': 'black-queen',
+        'bR': 'black-rook',
+        'bB': 'black-bishop',
+        'bN': 'black-knight',
+        'bP': 'black-pawn'
+      };
+      const pieceName = pieceMap[piece] || piece;
+      return `libs/pieces/${pieceName}.png`;
+    };
+    
+    board = window.Chessboard('board', {
+      position: 'start',
+      draggable: true,
+      pieceTheme: pieceTheme,
+      onDragStart: onDragStart,
+      onDrop: onDrop,
+      onSnapEnd: onSnapEnd
+    });
+    
+    if (board) {
+      console.log('✅ Board initialized with starting position');
+    }
+  } catch (err) {
+    console.error('Error initializing board:', err);
   }
 }
 
