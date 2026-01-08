@@ -676,6 +676,10 @@ function setupEventListeners() {
     const endBtn = document.getElementById('endBtn');
     const voiceToggle = document.getElementById('voiceToggle');
     
+    // Initialize button states: play visible, pause hidden
+    if (playBtn) playBtn.style.display = 'flex';
+    if (pauseBtn) pauseBtn.style.display = 'none';
+    
     if (playBtn) playBtn.addEventListener('click', playMoves);
     if (pauseBtn) pauseBtn.addEventListener('click', pauseMoves);
     if (stopBtn) stopBtn.addEventListener('click', stopMoves);
@@ -822,6 +826,12 @@ function resetGameState() {
     clearInterval(playInterval);
     playInterval = null;
   }
+  
+  // Reset button states: show play, hide pause
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (playBtn) playBtn.style.display = 'flex';
+  if (pauseBtn) pauseBtn.style.display = 'none';
   
   // Clear moves list
   const movesList = document.getElementById('movesList');
@@ -2103,6 +2113,12 @@ function playMoves() {
   
   isPlaying = true;
   
+  // Update button visibility: hide play, show pause
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (playBtn) playBtn.style.display = 'none';
+  if (pauseBtn) pauseBtn.style.display = 'flex';
+  
   // Speak intro summary if starting from beginning
   if (currentMoveIndex === -1 && gameSummary) {
     speakGameIntro();
@@ -2154,6 +2170,12 @@ function pauseMoves() {
     clearInterval(playInterval);
     playInterval = null;
   }
+  
+  // Update button visibility: show play, hide pause
+  const playBtn = document.getElementById('playBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (playBtn) playBtn.style.display = 'flex';
+  if (pauseBtn) pauseBtn.style.display = 'none';
 }
 
 function stopMoves() {
