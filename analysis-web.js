@@ -2095,7 +2095,7 @@ function updateEvaluation(cp, isFromStockfish = true) {
   evalBar.style.height = `${Math.max(0, Math.min(100, whitePercentage))}%`;
   evalBar.style.bottom = '0';
   evalBar.style.top = 'auto';
-  evalBar.className = 'eval-fill-vertical';
+  evalBar.className = 'eval-fill'; // Keep the CSS class name
 }
 
 function playMoves() {

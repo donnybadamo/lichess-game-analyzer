@@ -4,7 +4,7 @@
 
 // IMPORTANT: Update this with your actual Worker URL after deployment
 // Replace YOUR_SUBDOMAIN with your actual Worker subdomain
-const CLOUDFLARE_WORKER_URL = process.env.CLOUDFLARE_WORKER_URL || 'https://chess-analyzer-secrets.YOUR_SUBDOMAIN.workers.dev';
+const CLOUDFLARE_WORKER_URL = 'https://chess-analyzer-secrets.7jkvwxtmvm.workers.dev';
 
 async function getSecretFromCloudflare(secretName) {
   try {
