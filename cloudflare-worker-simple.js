@@ -3,6 +3,16 @@
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+    
+    // Handle favicon.ico requests - return empty 204
+    if (url.pathname === '/favicon.ico' || url.pathname === '/get-secret/favicon.ico') {
+      return new Response(null, { 
+        status: 204,
+        headers: { 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+    
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -14,19 +24,32 @@ export default {
       });
     }
     
-    // Only allow POST requests
-    if (request.method !== 'POST') {
-      return new Response('Method not allowed', { 
+    // Only allow POST requests for /get-secret
+    if (url.pathname === '/get-secret' && request.method !== 'POST') {
+      return new Response(JSON.stringify({ 
+        error: 'Method not allowed',
+        message: 'This endpoint only accepts POST requests. Please use POST method.'
+      }), { 
         status: 405,
-        headers: { 'Access-Control-Allow-Origin': '*' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Allow': 'POST, OPTIONS'
+        }
       });
     }
     
-    const url = new URL(request.url);
+    // Only handle /get-secret endpoint
     if (url.pathname !== '/get-secret') {
-      return new Response('Not found', { 
+      return new Response(JSON.stringify({ 
+        error: 'Not found',
+        message: 'Endpoint not found. Use /get-secret with POST method.'
+      }), { 
         status: 404,
-        headers: { 'Access-Control-Allow-Origin': '*' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*' 
+        }
       });
     }
     

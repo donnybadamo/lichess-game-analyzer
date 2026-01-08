@@ -22,7 +22,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♟️</text></svg>">
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
-  <link rel="stylesheet" href="analysis.css">
+  <link rel="stylesheet" href="analysis.css?v=2">
   <link rel="stylesheet" href="libs/chessboard.css">
 </head>
 <body>
@@ -36,21 +36,16 @@
     <div class="header-spacer"></div>
   </header>
 
-  <main class="container-fluid px-4 py-3 h-100">
-    <div class="row g-3 h-100">
-      <!-- Left: Board Section -->
-      <div class="col-lg-9 col-xl-10 d-flex flex-column board-section">
+  <main class="container-fluid px-0 py-0 h-100" style="position: relative;">
+    <div class="board-panel-wrapper">
+      <!-- Board Section -->
+      <div class="board-section">
         <div class="player-bar player-top" id="playerBlack">
           <span class="player-name">Black</span>
           <span class="player-rating"></span>
         </div>
         
         <div class="board-with-eval flex-grow-1 d-flex align-items-center justify-content-center">
-          <div class="eval-bar" id="evaluation">
-            <div class="eval-fill" id="evalBar"></div>
-            <span class="eval-text" id="evalText">0.0</span>
-            <span class="sf-badge" id="sfBadge" title="Stockfish 16">SF</span>
-          </div>
           <div class="board-area">
             <div id="board"></div>
             <svg id="moveArrows" class="move-arrows"></svg>
@@ -61,31 +56,37 @@
           <span class="player-name">White</span>
           <span class="player-rating"></span>
         </div>
-        
-        <div class="nav-controls">
-          <button id="stopBtn" class="nav-btn" title="Reset">⏮</button>
-          <button id="prevBtn" class="nav-btn" title="Previous">◀</button>
-          <button id="playBtn" class="nav-btn play-btn" title="Play">▶</button>
-          <button id="nextBtn" class="nav-btn" title="Next">▶</button>
-          <button id="pauseBtn" class="nav-btn" title="Pause" style="display:none;">⏸</button>
-          <button id="endBtn" class="nav-btn" title="End">⏭</button>
-        </div>
-        <div class="nav-controls-secondary">
-          <button id="flipBtn" class="nav-btn" title="Flip Board">🔄</button>
-          <label class="voice-toggle">
-            <input type="checkbox" id="voiceToggle" checked>
-            <span class="voice-icon">🔊</span>
-          </label>
-        </div>
       </div>
       
-      <!-- Right: Analysis Panel -->
-      <div class="col-lg-3 col-xl-2 analysis-panel">
+      <!-- Eval Bar (centered between board and panel) -->
+      <div class="eval-bar" id="evaluation">
+        <div class="eval-fill" id="evalBar"></div>
+        <span class="eval-text" id="evalText">0.0</span>
+        <span class="sf-badge" id="sfBadge" title="Stockfish 16">SF</span>
+      </div>
       
+      <!-- Right: Analysis Panel (Floating) -->
+      <div class="analysis-panel">
+      <!-- Upload PGN Button -->
+      <button class="pgn-upload-btn" id="pgnUploadBtn" title="Upload PGN File">
+        <input type="file" id="pgnFileInput" accept=".pgn,.txt" style="display: none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+      </button>
+      <div class="analysis-panel-content">
       <!-- Current Move Analysis -->
       <div class="move-analysis" id="moveAnalysis">
         <div class="analysis-content">
-          <div class="analysis-icon" id="analysisIcon">📊</div>
+          <div class="analysis-icon" id="analysisIcon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
+          </div>
           <div class="analysis-details">
             <div class="analysis-move" id="analysisMove">Chess Game Analyzer</div>
             <div class="analysis-text" id="analysisText">Analyze your chess games with Stockfish 16 engine. Get move-by-move commentary, identify blunders and brilliant moves, and review key moments with AI-powered voice narration.</div>
@@ -99,17 +100,30 @@
       </div>
       
       <!-- Key Moments -->
-      <div class="key-moments-section" id="keyMomentsSection">
-        <h3>⚡ Key Moments</h3>
+      <div class="key-moments-section" id="keyMomentsSection" style="display: none;">
+        <h3>Key Moments</h3>
         <div class="key-moments-scroll" id="keyMomentsList">
-          <div class="moments-placeholder">Key moments from your game will appear here after analysis</div>
         </div>
       </div>
       
       <!-- Compact Move List -->
-      <div class="moves-section">
+      <div class="moves-section" id="movesSection" style="display: none;">
         <h3>Moves</h3>
-        <div class="moves-grid" id="movesList"></div>
+        <div class="moves-grid" id="movesList">
+        </div>
+      </div>
+      
+      <!-- Demo Button Section (shown when no game loaded) -->
+      <div class="demo-section" id="demoSection">
+        <div class="demo-content">
+          <p class="demo-text">Want to see how it works? Try the demo game below to experience move-by-move analysis, key moments, and voice commentary with a real game example.</p>
+          <button class="btn-demo" id="demoBtn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Try Demo Game</span>
+          </button>
+        </div>
       </div>
       
       <!-- Eval Graph -->
@@ -117,14 +131,115 @@
         <canvas id="evalGraph" height="60"></canvas>
       </div>
       </div>
+      
+      <!-- Navigation Controls (footer of right panel) -->
+      <div class="nav-controls">
+        <!-- Group 1: Sound and Flip -->
+        <div class="voice-dropdown">
+          <button class="voice-btn" id="voiceBtn" title="Voice Settings">
+            <svg class="voice-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            </svg>
+          </button>
+          <div class="voice-dropdown-menu" id="voiceDropdownMenu">
+            <div class="voice-option" id="muteVoiceOption" data-voice="mute">
+              <svg class="voice-option-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+              <span class="voice-option-name">Mute</span>
+            </div>
+            <div class="voice-option active" id="browserVoiceOption" data-voice="browser">
+              <svg class="voice-option-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              </svg>
+              <span class="voice-option-name">Browser Voice</span>
+              <span class="voice-option-check">✓</span>
+            </div>
+            <div class="voice-option locked" id="donnyVoiceOption" data-voice="donny">
+              <svg class="voice-option-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+              <span class="voice-option-name">Donny Voice</span>
+              <span class="voice-option-lock">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+        <input type="checkbox" id="voiceToggle" checked style="display: none;">
+        <button id="flipBtn" class="nav-btn" title="Flip Board (f)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            <polyline points="12 12.01 12 22.08 20.73 17.04"></polyline>
+            <polyline points="3.27 6.96 12 12.01 12 22.08"></polyline>
+          </svg>
+        </button>
+        <div class="nav-separator"></div>
+        <!-- Group 2: Navigation -->
+        <button id="stopBtn" class="nav-btn" title="Go to Start (Home)">⏮</button>
+        <button id="prevBtn" class="nav-btn" title="Previous Move (←)">◀</button>
+        <button id="playPauseBtn" class="nav-btn play-btn" title="Play/Pause (Space)">▶</button>
+        <button id="nextBtn" class="nav-btn" title="Next Move (→)">▶</button>
+        <button id="endBtn" class="nav-btn" title="Go to End (End)">⏭</button>
+      </div>
+      </div>
     </div>
   </main>
   
-  <!-- PGN Input Modal -->
+  <!-- Password Dialog Modal -->
+  <div class="password-modal" id="passwordModal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="password-modal-content">
+      <div class="password-modal-header">
+        <div class="password-icon">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </div>
+        <h2>Unlock Donny Voice</h2>
+        <p class="password-subtitle">Enter the secret password to unlock the premium voice feature</p>
+      </div>
+      <div class="password-modal-body">
+        <input type="password" id="passwordInput" class="password-input" placeholder="Enter password..." autocomplete="off" autofocus>
+        <div class="password-hint" id="passwordHint"></div>
+      </div>
+      <div class="password-modal-footer">
+        <button id="passwordCancelBtn" class="btn-password-cancel">Cancel</button>
+        <button id="passwordSubmitBtn" class="btn-password-submit">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Unlock</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success/Error Toast -->
+  <div class="toast" id="toast" style="display: none;">
+    <div class="toast-icon" id="toastIcon"></div>
+    <div class="toast-message" id="toastMessage"></div>
+  </div>
+
   <div class="pgn-modal" id="pgnModal" style="display: none;">
     <div class="modal-content">
       <button id="closePgnModal" class="modal-close-btn" title="Close">×</button>
-      <h2>♟️ Paste Game PGN</h2>
+      <h2>Paste Game PGN</h2>
       <p class="modal-hint">Copy a PGN from Lichess, Chess.com, or any chess site</p>
       <textarea id="pgnInput" placeholder="[Event &quot;Casual Game&quot;]
 [Site &quot;lichess.org&quot;]
@@ -135,7 +250,10 @@
 
 1. e4 e5 2. Nf3 Nc6 3. Bb5 ..."></textarea>
       <div class="modal-buttons">
-        <button id="analyzePgnBtn" class="btn-analyze">Analyze Game</button>
+        <button id="analyzePgnBtn" class="btn-analyze">
+          <span style="font-size: 22px;">📋</span>
+          <span style="font-size: 13px;">Analyze Game</span>
+        </button>
       </div>
     </div>
   </div>
@@ -185,6 +303,12 @@
       .then(() => {
         console.log('✓ Chessboard loaded');
         return loadScript('analysis-web.js');
+      })
+      .then(() => {
+        console.log('✓ Analysis script loaded');
+        return loadScript('example-game-commentary.js').catch(() => {
+          console.log('⚠️ Example commentary not found (optional)');
+        });
       })
       .then(() => {
         console.log('✓ Analysis script loaded');

@@ -23,7 +23,10 @@ async function getSecretFromCloudflare(secretName) {
     });
     
     if (!response.ok) {
-      console.error(`❌ Worker error for ${secretName}:`, response.status);
+      // Only log error if it's not a 404 (secret not found, which is expected)
+      if (response.status !== 404) {
+        console.error(`❌ Worker error for ${secretName}:`, response.status);
+      }
       return null;
     }
     
@@ -31,7 +34,10 @@ async function getSecretFromCloudflare(secretName) {
     return data.secretValue || null;
     
   } catch (error) {
-    console.error(`❌ Error fetching secret ${secretName}:`, error);
+    // Suppress network errors - they're expected if Worker is not available
+    if (error.name !== 'TypeError' || !error.message.includes('fetch')) {
+      console.error(`❌ Error fetching secret ${secretName}:`, error);
+    }
     return null;
   }
 }

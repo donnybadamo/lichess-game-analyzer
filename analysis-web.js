@@ -22,6 +22,31 @@ let isExploringLine = false; // Track if user is exploring alternate moves
 // Password protection for premium voice
 const VOICE_PASSWORD = 'badamo';
 let premiumVoiceUnlocked = false;
+let selectedVoiceType = 'browser'; // 'browser' or 'donny'
+
+// Example game PGN to load on first page visit
+const EXAMPLE_GAME_PGN = `[Event "rated blitz game"]
+[Site "https://lichess.org/V2Y1nkCJ"]
+[Date "2026.01.08"]
+[Round "-"]
+[White "IIOhManII"]
+[Black "zinoukorrichi"]
+[Result "1-0"]
+[GameId "V2Y1nkCJ"]
+[UTCDate "2026.01.08"]
+[UTCTime "00:45:25"]
+[WhiteElo "1793"]
+[BlackElo "1805"]
+[WhiteRatingDiff "+6"]
+[BlackRatingDiff "-8"]
+[Variant "Standard"]
+[TimeControl "180+2"]
+[ECO "A00"]
+[Opening "Polish Opening: Schiffler-Sokolsky Variation"]
+[Termination "Normal"]
+[Annotator "lichess.org"]
+
+1. b4 { [%eval -0.07] [%clk 0:03:00] } 1... Nf6 { [%eval -0.11] [%clk 0:03:00] } 2. Bb2 { [%eval -0.1] [%clk 0:03:00] } 2... e6 { [%eval -0.03] [%clk 0:03:02] } 3. b5 { [%eval -0.09] [%clk 0:02:59] } 3... d5 { [%eval -0.07] [%clk 0:03:02] } 4. e3 { [%eval -0.03] [%clk 0:03:00] } { A00 Polish Opening: Schiffler-Sokolsky Variation } 4... Bd6 { [%eval 0.0] [%clk 0:03:03] } 5. Nf3 { [%eval -0.04] [%clk 0:03:01] } 5... O-O { [%eval -0.04] [%clk 0:03:04] } 6. c4 { [%eval -0.13] [%clk 0:03:01] } 6... a6 { [%eval -0.15] [%clk 0:03:01] } 7. a4 { [%eval -0.06] [%clk 0:02:59] } 7... c6 { [%eval 0.0] [%clk 0:02:58] } 8. Be2 { [%eval -0.05] [%clk 0:02:55] } 8... cxb5 { [%eval 0.25] [%clk 0:02:58] } 9. cxb5 { [%eval -0.15] [%clk 0:02:56] } 9... axb5 { [%eval -0.17] [%clk 0:02:58] } 10. Bxb5 { [%eval -0.17] [%clk 0:02:58] } 10... Bd7 { [%eval -0.13] [%clk 0:02:56] } 11. Nc3 { [%eval -0.11] [%clk 0:02:58] } 11... Nc6 { [%eval -0.11] [%clk 0:02:53] } 12. O-O { [%eval -0.2] [%clk 0:02:57] } 12... Ne5 { [%eval -0.03] [%clk 0:02:34] } 13. Nxe5 { [%eval 0.0] [%clk 0:02:54] } 13... Bxe5 { [%eval -0.06] [%clk 0:02:34] } 14. f4 { [%eval -0.08] [%clk 0:02:50] } 14... Bxb5 { [%eval -0.09] [%clk 0:02:29] } 15. fxe5?? { (-0.09 → -2.00) Blunder. axb5 was best. } { [%eval -2.0] [%clk 0:02:40] } (15. axb5) 15... Bxf1 { [%eval -2.0] [%clk 0:02:28] } 16. exf6 { [%eval -1.93] [%clk 0:02:41] } 16... Bd3 { [%eval -1.67] [%clk 0:02:19] } 17. fxg7 { [%eval -2.07] [%clk 0:02:41] } 17... Re8 { [%eval -2.04] [%clk 0:02:18] } 18. Qh5 { [%eval -2.48] [%clk 0:02:22] } 18... Qf6 { [%eval -2.14] [%clk 0:02:09] } 19. Ra2?? { (-2.14 → Mate in 1) Checkmate is now unavoidable. h3 was best. } { [%eval #-1] [%clk 0:01:43] } (19. h3 Rac8 20. Qg4 Rc4 21. Qg3 Rb4 22. Ra2 d4 23. exd4 Qxd4+ 24. Kh2 Qf4) 19... Qg6?? { (Mate in 1 → -2.42) Lost forced checkmate sequence. Qf1# was best. } { [%eval -2.42] [%clk 0:02:03] } (19... Qf1#) 20. Qf3 { [%eval -3.09] [%clk 0:01:35] } 20... e5 { [%eval -2.7] [%clk 0:01:33] } 21. Nxd5?! { (-2.70 → -4.07) Inaccuracy. Ra1 was best. } { [%eval -4.07] [%clk 0:01:23] } (21. Ra1 Rad8 22. h4 Qf5 23. Qxf5 Bxf5 24. Nb5 Kxg7 25. Rc1 Kg6 26. d4 f6) 21... Kxg7?? { (-4.07 → 0.34) Blunder. Ra6 was best. } { [%eval 0.34] [%clk 0:01:04] } (21... Ra6 22. Nb4 Rf6 23. Qxf6 Qxf6 24. Nxd3 Qg6 25. Ra3 f6 26. Rc3 Qg4 27. h3) 22. Nf4 { [%eval 0.44] [%clk 0:01:16] } 22... Qc6?? { (0.44 → 4.90) Blunder. Be4 was best. } { [%eval 4.9] [%clk 0:00:31] } (22... Be4) 23. Qxc6 { [%eval 4.82] [%clk 0:01:02] } 23... bxc6 { [%eval 4.69] [%clk 0:00:29] } 24. Nxd3 { [%eval 4.74] [%clk 0:01:03] } 24... Red8 { [%eval 5.09] [%clk 0:00:26] } 25. Nxe5 { [%eval 5.04] [%clk 0:00:59] } 25... Rxd2 { [%eval 4.91] [%clk 0:00:27] } 26. Nc4+ { [%eval 5.08] [%clk 0:01:00] } { Black resigns. } 1-0`;
 
 /**
  * Check if premium voice is unlocked
@@ -334,40 +359,17 @@ async function initializeAnalysisPage() {
   // Initialize board on page load (show starting position)
   await initializeBoardWithStartingPosition();
   
-  // Get PGN from URL parameters
+  // Show welcome page by default
+  updateAnalysisPanelWithIntro();
+  
+  // Get PGN from URL parameters - only load if explicitly provided in URL
   const urlParams = new URLSearchParams(window.location.search);
   let pgn = urlParams.get('pgn');
   console.log('PGN from URL:', pgn ? 'Found (' + pgn.substring(0, 50) + '...)' : 'Not found');
   
-  // Check if PGN input section exists
-  const pgnInputSection = document.getElementById('pgnInputSection');
-  console.log('PGN input section found:', !!pgnInputSection);
-  if (pgnInputSection) {
-    console.log('PGN input section display:', window.getComputedStyle(pgnInputSection).display);
-  }
-  
-  // Fallback: try to get from localStorage if URL param is missing
-  if (!pgn) {
-    try {
-      const storedPgn = localStorage.getItem('currentGamePGN');
-      if (storedPgn) {
-        console.log('Got PGN from localStorage');
-        await initializeGame(storedPgn);
-        // Hide PGN modal after successful analysis
-        const pgnModal = document.getElementById('pgnModal');
-        if (pgnModal) {
-          pgnModal.style.display = 'none';
-        }
-        return;
-      } else {
-        // Don't show PGN modal immediately - show intro instead
-        updateAnalysisPanelWithIntro();
-      }
-    } catch (e) {
-      console.error('Error accessing localStorage:', e);
-    }
-  }
-  
+  // Only load game if PGN is explicitly provided in URL
+  // Don't auto-load from localStorage or show example game
+  // User must click demo button or paste PGN to load a game
   if (pgn) {
     pgn = decodeURIComponent(pgn);
     await initializeGame(pgn);
@@ -378,9 +380,9 @@ async function initializeAnalysisPage() {
       pgnModal.style.display = 'none';
     }
   } else {
-    // Don't show PGN modal immediately - let user explore first
-    // Show intro message instead
-    updateAnalysisPanelWithIntro();
+    // Show welcome page - user can choose to load demo or paste PGN
+    console.log('No PGN in URL - showing welcome page');
+    // Welcome page is already shown by updateAnalysisPanelWithIntro() above
   }
 }
 
@@ -559,10 +561,17 @@ async function initializeGame(pgn) {
         position: 'start',
         draggable: true,
         pieceTheme: pieceTheme,
+        orientation: 'white', // White on bottom (standard orientation)
         onDragStart: onDragStart,
         onDrop: onDrop,
         onSnapEnd: onSnapEnd
       });
+      
+      // Ensure white is on bottom
+      if (board) {
+        board.orientation('white');
+        boardOrientation = 'white';
+      }
       
       console.log('Chessboard initialized with drag enabled:', pieceTheme);
       
@@ -651,7 +660,7 @@ async function initializeGame(pgn) {
     console.log('Initializing Stockfish...');
     await initializeStockfish();
     
-    // Replace intro with game analysis
+    // Update analysis panel (but keep it visible)
     const analysisMove = document.getElementById('analysisMove');
     const analysisText = document.getElementById('analysisText');
     if (analysisMove) {
@@ -669,6 +678,9 @@ async function initializeGame(pgn) {
     console.log('Starting game analysis...');
     await analyzeGame();
     
+    // Refresh moves display to show best move suggestions after analysis
+    displayMoves();
+    
     // Show game summary
     displayGameSummary();
     
@@ -683,26 +695,33 @@ function setupEventListeners() {
   
   // Wait a bit for DOM to be ready
   setTimeout(() => {
-    const playBtn = document.getElementById('playBtn');
-    const pauseBtn = document.getElementById('pauseBtn');
+    const playPauseBtn = document.getElementById('playPauseBtn');
     const stopBtn = document.getElementById('stopBtn');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const endBtn = document.getElementById('endBtn');
     const voiceToggle = document.getElementById('voiceToggle');
+    const flipBtn = document.getElementById('flipBtn');
     
-    // Initialize button states: play visible, pause hidden
-    if (playBtn) playBtn.style.display = 'flex';
-    if (pauseBtn) pauseBtn.style.display = 'none';
+    // Single play/pause button that toggles
+    if (playPauseBtn) {
+      // Initialize button state
+      playPauseBtn.textContent = '▶';
+      playPauseBtn.title = 'Play (Space)';
+      
+      playPauseBtn.addEventListener('click', () => {
+        if (isPlaying) {
+          pauseMoves();
+        } else {
+          playMoves();
+        }
+      });
+    }
     
-    if (playBtn) playBtn.addEventListener('click', playMoves);
-    if (pauseBtn) pauseBtn.addEventListener('click', pauseMoves);
     if (stopBtn) stopBtn.addEventListener('click', stopMoves);
     if (prevBtn) prevBtn.addEventListener('click', previousMove);
     if (nextBtn) nextBtn.addEventListener('click', nextMove);
     if (endBtn) endBtn.addEventListener('click', goToEnd);
-    
-    const flipBtn = document.getElementById('flipBtn');
     if (flipBtn) flipBtn.addEventListener('click', flipBoard);
     
     // Keyboard navigation for moves
@@ -719,13 +738,21 @@ function setupEventListeners() {
           e.preventDefault();
           nextMove();
           break;
-        case 'ArrowUp':
+        case 'Home':
           e.preventDefault();
           stopMoves(); // Go to start
           break;
-        case 'ArrowDown':
+        case 'End':
           e.preventDefault();
           goToEnd(); // Go to end
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          stopMoves(); // Go to start (also works)
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          goToEnd(); // Go to end (also works)
           break;
         case ' ': // Spacebar
           e.preventDefault();
@@ -740,8 +767,216 @@ function setupEventListeners() {
           e.preventDefault();
           flipBoard();
           break;
+        case 's':
+        case 'S':
+          e.preventDefault();
+          // Toggle voice on/off
+          if (voiceToggle) {
+            voiceToggle.checked = !voiceToggle.checked;
+            voiceEnabled = voiceToggle.checked;
+            voiceToggle.dispatchEvent(new Event('change'));
+          }
+          break;
       }
     });
+    
+    // Voice dropdown setup
+    const voiceBtn = document.getElementById('voiceBtn');
+    const voiceDropdown = document.querySelector('.voice-dropdown');
+    const voiceDropdownMenu = document.getElementById('voiceDropdownMenu');
+    const donnyVoiceOption = document.getElementById('donnyVoiceOption');
+    const voiceOptions = document.querySelectorAll('.voice-option');
+    
+    if (voiceBtn && voiceDropdown) {
+      // Toggle dropdown on click
+      voiceBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        voiceDropdown.classList.toggle('open');
+      });
+      
+      // Close dropdown when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!voiceDropdown.contains(e.target)) {
+          voiceDropdown.classList.remove('open');
+        }
+      });
+      
+      // Handle voice option selection
+      voiceOptions.forEach(option => {
+        option.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const voiceType = option.dataset.voice;
+          
+          if (voiceType === 'mute') {
+            // Mute option - disable voice
+            voiceOptions.forEach(opt => {
+              opt.classList.remove('active');
+              const existingCheck = opt.querySelector('.voice-option-check');
+              if (existingCheck) {
+                existingCheck.remove();
+              }
+            });
+            option.classList.add('active');
+            if (!option.querySelector('.voice-option-check')) {
+              option.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+            }
+            
+            voiceEnabled = false;
+            if (voiceToggle) {
+              voiceToggle.checked = false;
+            }
+            
+            // Stop any currently playing speech
+            if (synth && synth.speaking) {
+              synth.cancel();
+            }
+            
+            // Save to sessionStorage
+            sessionStorage.setItem('voiceEnabled', 'false');
+            sessionStorage.removeItem('selectedVoiceType');
+            
+            voiceDropdown.classList.remove('open');
+            console.log('Voice muted');
+            return;
+          }
+          
+          if (voiceType === 'donny') {
+            // Check if unlocked
+            if (!donnyVoiceOption.classList.contains('unlocked')) {
+              // Show custom password dialog
+              showPasswordDialog((success) => {
+                if (success) {
+                  premiumVoiceUnlocked = true;
+                  sessionStorage.setItem('premiumVoiceUnlocked', 'true');
+                  donnyVoiceOption.classList.add('unlocked');
+                  donnyVoiceOption.classList.remove('locked');
+                  const lockEl = donnyVoiceOption.querySelector('.voice-option-lock');
+                  if (lockEl) lockEl.innerHTML = '';
+                  showToast('success', 'Donny Voice unlocked! Welcome to premium voice narration.');
+                  // Continue with selection
+                  voiceOptions.forEach(opt => {
+                    opt.classList.remove('active');
+                    const existingCheck = opt.querySelector('.voice-option-check');
+                    if (existingCheck) {
+                      existingCheck.remove();
+                    }
+                  });
+                  option.classList.add('active');
+                  selectedVoiceType = 'donny';
+                  if (!option.querySelector('.voice-option-check')) {
+                    option.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+                  }
+                  if (voiceToggle) {
+                    voiceToggle.checked = true;
+                    voiceEnabled = true;
+                  }
+                  sessionStorage.setItem('selectedVoiceType', selectedVoiceType);
+                  sessionStorage.setItem('voiceEnabled', 'true');
+                  voiceDropdown.classList.remove('open');
+                  console.log('Voice type selected:', selectedVoiceType);
+                } else {
+                  voiceDropdown.classList.remove('open');
+                }
+              });
+              return; // Don't proceed with selection yet
+            }
+          }
+          
+          // Update selection
+          voiceOptions.forEach(opt => {
+            opt.classList.remove('active');
+            const existingCheck = opt.querySelector('.voice-option-check');
+            if (existingCheck && opt !== option) {
+              existingCheck.remove();
+            }
+          });
+          option.classList.add('active');
+          selectedVoiceType = voiceType;
+          
+          // Add checkmark if not present
+          if (!option.querySelector('.voice-option-check')) {
+            option.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+          }
+          
+          // Update voice toggle state (enable when a voice is selected)
+          if (voiceToggle) {
+            voiceToggle.checked = true;
+            voiceEnabled = true;
+          }
+          
+          // Save selection to sessionStorage
+          sessionStorage.setItem('selectedVoiceType', selectedVoiceType);
+          sessionStorage.setItem('voiceEnabled', 'true');
+          
+          voiceDropdown.classList.remove('open');
+          console.log('Voice type selected:', selectedVoiceType);
+        });
+      });
+      
+      // Initialize voice type from sessionStorage
+      const storedVoiceType = sessionStorage.getItem('selectedVoiceType');
+      const storedUnlocked = sessionStorage.getItem('premiumVoiceUnlocked');
+      const storedVoiceEnabled = sessionStorage.getItem('voiceEnabled');
+      
+      if (storedUnlocked === 'true') {
+        premiumVoiceUnlocked = true;
+        if (donnyVoiceOption) {
+          donnyVoiceOption.classList.add('unlocked');
+          donnyVoiceOption.classList.remove('locked');
+          const lockEl = donnyVoiceOption.querySelector('.voice-option-lock');
+          if (lockEl) lockEl.textContent = '';
+        }
+      }
+      
+      // Check if voice is muted
+      if (storedVoiceEnabled === 'false') {
+        voiceEnabled = false;
+        if (voiceToggle) {
+          voiceToggle.checked = false;
+        }
+        // Set mute as active
+        voiceOptions.forEach(opt => {
+          opt.classList.remove('active');
+          if (opt.dataset.voice === 'mute') {
+            opt.classList.add('active');
+            if (!opt.querySelector('.voice-option-check')) {
+              opt.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+            }
+          }
+        });
+      } else if (storedVoiceType === 'donny' && premiumVoiceUnlocked) {
+        selectedVoiceType = 'donny';
+        voiceEnabled = true;
+        if (voiceToggle) {
+          voiceToggle.checked = true;
+        }
+        voiceOptions.forEach(opt => {
+          opt.classList.remove('active');
+          if (opt.dataset.voice === 'donny') {
+            opt.classList.add('active');
+            if (!opt.querySelector('.voice-option-check')) {
+              opt.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+            }
+          }
+        });
+      } else {
+        // Default to browser voice
+        selectedVoiceType = 'browser';
+        voiceEnabled = true;
+        if (voiceToggle) {
+          voiceToggle.checked = true;
+        }
+        voiceOptions.forEach(opt => {
+          opt.classList.remove('active');
+          if (opt.dataset.voice === 'browser') {
+            opt.classList.add('active');
+            if (!opt.querySelector('.voice-option-check')) {
+              opt.insertAdjacentHTML('beforeend', '<span class="voice-option-check">✓</span>');
+            }
+          }
+        });
+      }
+    }
     
     if (voiceToggle) {
       // Set initial state
@@ -754,6 +989,97 @@ function setupEventListeners() {
       });
     } else {
       console.warn('Voice toggle element not found!');
+    }
+    
+    // PGN Upload button setup
+    const pgnUploadBtn = document.getElementById('pgnUploadBtn');
+    const pgnFileInput = document.getElementById('pgnFileInput');
+    
+    if (pgnUploadBtn && pgnFileInput) {
+      // Click upload button to trigger file input
+      pgnUploadBtn.addEventListener('click', () => {
+        pgnFileInput.click();
+      });
+      
+      // Handle file selection
+      pgnFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        // Check file extension
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.pgn') && !fileName.endsWith('.txt')) {
+          alert('Please select a .pgn or .txt file');
+          pgnFileInput.value = ''; // Reset input
+          return;
+        }
+        
+        try {
+          // Read file as text
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const pgnContent = event.target.result;
+            
+            if (!pgnContent || pgnContent.trim().length === 0) {
+              alert('The selected file is empty');
+              pgnFileInput.value = '';
+              return;
+            }
+            
+            // Initialize game with uploaded PGN
+            await initializeGame(pgnContent);
+            
+            // Save to localStorage for persistence
+            try {
+              localStorage.setItem('currentGamePGN', pgnContent);
+            } catch (err) {
+              console.warn('Could not save PGN to localStorage:', err);
+            }
+            
+            // Hide PGN modal if open
+            const pgnModal = document.getElementById('pgnModal');
+            if (pgnModal) {
+              pgnModal.style.display = 'none';
+            }
+            
+            // Reset file input
+            pgnFileInput.value = '';
+          };
+          
+          reader.onerror = () => {
+            alert('Error reading file. Please try again.');
+            pgnFileInput.value = '';
+          };
+          
+          reader.readAsText(file);
+        } catch (error) {
+          console.error('Error loading PGN file:', error);
+          alert('Error loading PGN file: ' + error.message);
+          pgnFileInput.value = '';
+        }
+      });
+    } else {
+      console.warn('PGN upload button or file input not found!');
+    }
+    
+    // Demo button handler
+    const demoBtn = document.getElementById('demoBtn');
+    if (demoBtn) {
+      demoBtn.addEventListener('click', async () => {
+        console.log('Loading demo game...');
+        await initializeGame(EXAMPLE_GAME_PGN);
+        // Save demo game to localStorage
+        try {
+          localStorage.setItem('currentGamePGN', EXAMPLE_GAME_PGN);
+        } catch (err) {
+          console.warn('Could not save demo game to localStorage:', err);
+        }
+        // Hide PGN modal if open
+        const pgnModal = document.getElementById('pgnModal');
+        if (pgnModal) {
+          pgnModal.style.display = 'none';
+        }
+      });
     }
     
     // PGN modal handler
@@ -882,13 +1208,17 @@ async function initializeBoardWithStartingPosition() {
       position: 'start',
       draggable: true,
       pieceTheme: pieceTheme,
+      orientation: 'white', // White on bottom (standard orientation)
       onDragStart: onDragStart,
       onDrop: onDrop,
       onSnapEnd: onSnapEnd
     });
     
     if (board) {
-      console.log('✅ Board initialized with starting position');
+      // Ensure white is on bottom
+      board.orientation('white');
+      boardOrientation = 'white';
+      console.log('✅ Board initialized with starting position (white on bottom)');
     }
   } catch (err) {
     console.error('Error initializing board:', err);
@@ -900,7 +1230,14 @@ function updateAnalysisPanelWithIntro() {
   const analysisMove = document.getElementById('analysisMove');
   const analysisText = document.getElementById('analysisText');
   const analysisIcon = document.getElementById('analysisIcon');
-  const keyMomentsList = document.getElementById('keyMomentsList');
+  const keyMomentsSection = document.getElementById('keyMomentsSection');
+  const movesSection = document.getElementById('movesSection');
+  const demoSection = document.getElementById('demoSection');
+  
+  // Hide game sections, show demo section
+  if (keyMomentsSection) keyMomentsSection.style.display = 'none';
+  if (movesSection) movesSection.style.display = 'none';
+  if (demoSection) demoSection.style.display = 'flex';
   
   if (analysisMove) {
     analysisMove.textContent = 'Chess Game Analyzer';
@@ -909,20 +1246,31 @@ function updateAnalysisPanelWithIntro() {
   if (analysisText) {
     analysisText.innerHTML = `
       <div style="margin-bottom: 16px;">
-        <strong>Analyze your chess games with AI-powered insights!</strong>
+        <strong>Welcome to Chess Game Analyzer!</strong>
       </div>
       <div style="font-size: 13px; line-height: 1.8; color: var(--muted-foreground);">
-        <p style="margin-bottom: 12px;">✨ <strong>Features:</strong></p>
+        <p style="margin-bottom: 12px;">Get deep insights into your chess games with AI-powered analysis. This tool helps you understand your games better by identifying key moments, suggesting better moves, and providing detailed commentary.</p>
+        
+        <p style="margin-bottom: 12px;"><strong>How to use:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 16px; padding: 0;">
+          <li><strong>Upload or paste</strong> a PGN file from your games</li>
+          <li><strong>Try the demo</strong> to see how it works</li>
+          <li><strong>Navigate</strong> through moves with the controls below</li>
+          <li><strong>Listen</strong> to voice commentary (click the sound icon)</li>
+        </ul>
+        
+        <p style="margin-bottom: 12px;"><strong>Features:</strong></p>
         <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0;">
-          <li>🔍 <strong>Stockfish 16</strong> engine analysis</li>
-          <li>🎯 <strong>Move-by-move</strong> commentary</li>
-          <li>⚡ <strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
-          <li>🔊 <strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
+          <li><strong>Stockfish 16</strong> engine analysis</li>
+          <li><strong>Move-by-move</strong> commentary</li>
+          <li><strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
+          <li><strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
           <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
         </ul>
         <p style="margin-top: 16px; margin-bottom: 0;">
-          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px;">
-            📋 Paste PGN to Start Analysis
+          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span style="font-size: 20px;">📋</span>
+            <span style="font-size: 13px;">Paste PGN to Start Analysis</span>
           </button>
         </p>
       </div>
@@ -943,11 +1291,7 @@ function updateAnalysisPanelWithIntro() {
   }
   
   if (analysisIcon) {
-    analysisIcon.textContent = '♟️';
-  }
-  
-  if (keyMomentsList) {
-    keyMomentsList.innerHTML = '<div class="moments-placeholder">Key moments from your game will appear here after analysis</div>';
+    analysisIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>';
   }
   
   // Clear eval
@@ -988,6 +1332,48 @@ function resetGameState() {
   const gameInfo = document.getElementById('gameInfo');
   if (gameInfo) {
     gameInfo.innerHTML = '';
+  }
+  
+  // Restore intro in right panel
+  const analysisMove = document.getElementById('analysisMove');
+  const analysisText = document.getElementById('analysisText');
+  if (analysisMove) {
+    analysisMove.textContent = 'Chess Game Analyzer';
+  }
+  if (analysisText) {
+    analysisText.innerHTML = `
+      <div style="margin-bottom: 16px;">
+        <strong>Analyze your chess games with AI-powered insights!</strong>
+      </div>
+      <div style="font-size: 13px; line-height: 1.8; color: var(--muted-foreground);">
+        <p style="margin-bottom: 12px;"><strong>Features:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0;">
+          <li><strong>Stockfish 16</strong> engine analysis</li>
+          <li><strong>Move-by-move</strong> commentary</li>
+          <li><strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
+          <li><strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
+          <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
+        </ul>
+        <p style="margin-top: 16px; margin-bottom: 0;">
+          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span style="font-size: 20px;">📋</span>
+            <span style="font-size: 13px;">Paste PGN to Start Analysis</span>
+          </button>
+        </p>
+      </div>
+    `;
+  }
+  
+  // Clear game summary
+  const gameSummary = document.getElementById('gameSummary');
+  if (gameSummary) {
+    gameSummary.innerHTML = '';
+  }
+  
+  // Clear key moments
+  const keyMomentsList = document.getElementById('keyMomentsList');
+  if (keyMomentsList) {
+    keyMomentsList.innerHTML = '';
   }
   
   // Reset evaluation
@@ -1123,9 +1509,96 @@ function updateAnalysisStatus(status) {
   }
 }
 
+// Helper function to check if current game matches the example game
+function isExampleGame() {
+  if (!window.EXAMPLE_GAME_COMMENTARY || !moves || moves.length === 0) return false;
+  
+  // Check if we can get data for the first move
+  if (window.getMoveByPly) {
+    const firstMoveData = window.getMoveByPly(0);
+    if (firstMoveData && firstMoveData.san === moves[0]?.san) {
+      // Check a few more moves to confirm
+      let matches = 0;
+      const checkCount = Math.min(6, moves.length);
+      for (let i = 0; i < checkCount; i++) {
+        const moveData = window.getMoveByPly(i);
+        if (moveData && moveData.san === moves[i]?.san) {
+          matches++;
+        }
+      }
+      // Require at least 4 matches or all checked moves match
+      return matches >= Math.min(4, checkCount) || matches === checkCount;
+    }
+  }
+  
+  return false;
+}
+
+// Helper function to get best move suggestion data for a move
+function getBestMoveSuggestion(moveIndex) {
+  // First check if we have example game commentary data and it matches
+  if (typeof window !== 'undefined' && window.EXAMPLE_GAME_COMMENTARY && window.getMoveByPly && isExampleGame()) {
+    const moveData = window.getMoveByPly(moveIndex);
+    if (moveData && moveData.bestMove && moveData.bestMove !== moves[moveIndex]?.san) {
+      // Check if there's a sizeable eval change or if it's marked as important
+      const prevMoveData = moveIndex > 0 ? window.getMoveByPly(moveIndex - 1) : null;
+      const prevEval = prevMoveData?.eval;
+      const currentEval = moveData.eval;
+      
+      // Handle string evals (like "#-1" for mate)
+      const prevEvalNum = typeof prevEval === 'string' ? 0 : (prevEval || 0);
+      const currentEvalNum = typeof currentEval === 'string' ? 0 : (currentEval || 0);
+      const evalChange = Math.abs(currentEvalNum - prevEvalNum);
+      
+      // Show suggestion if eval change is significant (>0.3) or if it's a marked key moment
+      if (evalChange > 0.3 || moveData.isKeyMoment || moveData.annotation) {
+        return {
+          bestMove: moveData.bestMove,
+          comment: moveData.suggestionComment || '',
+          evalChange: evalChange
+        };
+      }
+    }
+  }
+  
+  // Otherwise check Stockfish analysis data
+  if (analysisData[moveIndex] && analysisData[moveIndex].bestMove) {
+    const playedMove = moves[moveIndex]?.san;
+    const bestMove = analysisData[moveIndex].bestMove;
+    
+    // Only show if best move differs from played move
+    if (bestMove && bestMove !== playedMove) {
+      const currentEval = analysisData[moveIndex].cp / 100 || 0;
+      const prevEval = moveIndex > 0 ? (analysisData[moveIndex - 1]?.cp / 100 || 0) : 0;
+      const evalChange = Math.abs(currentEval - prevEval);
+      
+      // Show suggestion if eval change is significant (>0.3) or if there's an annotation
+      if (evalChange > 0.3 || analysisData[moveIndex].annotation) {
+        return {
+          bestMove: bestMove,
+          comment: '',
+          evalChange: evalChange
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
 function displayMoves() {
   const movesList = document.getElementById('movesList');
+  const movesSection = document.getElementById('movesSection');
+  const keyMomentsSection = document.getElementById('keyMomentsSection');
+  const demoSection = document.getElementById('demoSection');
+  
   if (!movesList) return;
+  
+  // Show sections when game is loaded, hide demo
+  if (movesSection) movesSection.style.display = 'flex';
+  if (keyMomentsSection) keyMomentsSection.style.display = 'flex';
+  if (demoSection) demoSection.style.display = 'none';
+  
   movesList.innerHTML = '';
 
   // Compact grid: move number | white move | black move
@@ -1144,7 +1617,18 @@ function displayMoves() {
     whiteCell.className = 'move-cell white-move';
     whiteCell.dataset.moveIndex = i;
     whiteCell.id = `move-${i}`;
-    whiteCell.innerHTML = `<span class="piece-dot white-dot"></span><span class="move-san">${whiteMove.san}</span><span class="move-icon"></span>`;
+    
+    // Check for best move suggestion
+    const whiteSuggestion = getBestMoveSuggestion(i);
+    let whiteSuggestionHTML = '';
+    if (whiteSuggestion) {
+      whiteSuggestionHTML = `<span class="move-suggestion" title="${whiteSuggestion.comment || `${whiteSuggestion.bestMove} was better`}">
+        <span class="suggestion-label">→</span>
+        <span class="suggestion-move">${whiteSuggestion.bestMove}</span>
+      </span>`;
+    }
+    
+    whiteCell.innerHTML = `<span class="piece-dot white-dot"></span><span class="move-san">${whiteMove.san}</span><span class="move-icon"></span>${whiteSuggestionHTML}`;
     whiteCell.addEventListener('click', () => goToMove(i));
     whiteCell.addEventListener('mouseenter', () => previewMove(i));
     whiteCell.addEventListener('mouseleave', () => clearPreview());
@@ -1157,7 +1641,18 @@ function displayMoves() {
       blackCell.className = 'move-cell black-move';
       blackCell.dataset.moveIndex = i + 1;
       blackCell.id = `move-${i + 1}`;
-      blackCell.innerHTML = `<span class="piece-dot black-dot"></span><span class="move-san">${blackMove.san}</span><span class="move-icon"></span>`;
+      
+      // Check for best move suggestion
+      const blackSuggestion = getBestMoveSuggestion(i + 1);
+      let blackSuggestionHTML = '';
+      if (blackSuggestion) {
+        blackSuggestionHTML = `<span class="move-suggestion" title="${blackSuggestion.comment || `${blackSuggestion.bestMove} was better`}">
+          <span class="suggestion-label">→</span>
+          <span class="suggestion-move">${blackSuggestion.bestMove}</span>
+        </span>`;
+      }
+      
+      blackCell.innerHTML = `<span class="piece-dot black-dot"></span><span class="move-san">${blackMove.san}</span><span class="move-icon"></span>${blackSuggestionHTML}`;
       blackCell.addEventListener('click', () => goToMove(i + 1));
       blackCell.addEventListener('mouseenter', () => previewMove(i + 1));
       blackCell.addEventListener('mouseleave', () => clearPreview());
@@ -1256,7 +1751,30 @@ async function analyzeGame() {
         // Create a temporary chess instance at the position Stockfish analyzed
         // This MUST be the position BEFORE the move was made
         const tempChessForConversion = new window.Chess();
-        tempChessForConversion.load(positionBeforeMove);
+        
+        // Ensure we load the full FEN with all fields
+        const fenParts = positionBeforeMove.split(' ');
+        let fullFen = positionBeforeMove;
+        if (fenParts.length < 6) {
+          // Reconstruct full FEN
+          const position = fenParts[0];
+          const activeColor = fenParts[1] || 'w';
+          const castling = fenParts[2] || '-';
+          const enPassant = fenParts[3] || '-';
+          const halfmove = fenParts[4] || '0';
+          const fullmove = fenParts[5] || '1';
+          fullFen = `${position} ${activeColor} ${castling} ${enPassant} ${halfmove} ${fullmove}`;
+        }
+        
+        tempChessForConversion.load(fullFen);
+        
+        // Verify the active color matches what we expect
+        const isWhiteMove = i % 2 === 0;
+        const expectedColor = isWhiteMove ? 'w' : 'b';
+        const actualColor = tempChessForConversion.turn();
+        if (actualColor !== expectedColor) {
+          console.error(`❌ Color mismatch at move ${i + 1}: expected ${expectedColor}, got ${actualColor}. FEN: ${fullFen}`);
+        }
         
         const uciMove = evaluationBefore.bestMove;
         // UCI format: "e2e4" or "e7e8q" (with promotion)
@@ -1265,31 +1783,39 @@ async function analyzeGame() {
           const to = uciMove.substring(2, 4);
           const promotion = uciMove.length > 4 ? uciMove[4].toLowerCase() : null;
           
-          // Verify the position matches what we expect
-          const expectedFen = tempChessForConversion.fen().split(' ')[0]; // Just position part
-          const actualFen = positionBeforeMove.split(' ')[0];
-          if (expectedFen !== actualFen) {
-            console.warn('Position mismatch when converting best move:', { expectedFen, actualFen });
-          }
+          // Verify the move is legal for the current position
+          const legalMoves = tempChessForConversion.moves({ verbose: true });
+          const isLegal = legalMoves.some(m => 
+            m.from === from && 
+            m.to === to && 
+            (!promotion || m.promotion === promotion)
+          );
           
-          const moveObj = tempChessForConversion.move({
-            from: from,
-            to: to,
-            promotion: promotion || undefined
-          });
-          
-          if (moveObj) {
-            bestMoveSAN = moveObj.san;
+          if (!isLegal) {
+            console.error(`❌ Illegal move suggested by Stockfish at move ${i + 1}: ${uciMove} for ${actualColor} to move. Legal moves: ${legalMoves.slice(0, 5).map(m => m.from + m.to).join(', ')}...`);
+            // Skip this best move - it's invalid
+            bestMoveSAN = null;
           } else {
-            console.warn('Invalid move for position:', { from, to, promotion, fen: positionBeforeMove, uciMove });
+            const moveObj = tempChessForConversion.move({
+              from: from,
+              to: to,
+              promotion: promotion || undefined
+            });
+            
+            if (moveObj) {
+              bestMoveSAN = moveObj.san;
+            } else {
+              console.warn(`⚠️ Move object is null for ${uciMove} at move ${i + 1}`);
+            }
           }
         }
       } catch (e) {
-        console.warn('Could not convert best move to SAN:', e, {
+        console.error(`❌ Could not convert best move to SAN at move ${i + 1}:`, e, {
           bestMove: evaluationBefore.bestMove,
-          position: positionBeforeMove
+          position: positionBeforeMove,
+          moveIndex: i
         });
-        bestMoveSAN = evaluationBefore.bestMove; // Fallback to UCI
+        bestMoveSAN = null; // Don't use invalid moves
       }
     }
     
@@ -1418,7 +1944,16 @@ async function analyzeGame() {
 
 function displayKeyMoments() {
   const keyMomentsList = document.getElementById('keyMomentsList');
+  const keyMomentsSection = document.getElementById('keyMomentsSection');
+  const movesSection = document.getElementById('movesSection');
+  const demoSection = document.getElementById('demoSection');
+  
   if (!keyMomentsList) return;
+  
+  // Show sections when game is loaded, hide demo
+  if (keyMomentsSection) keyMomentsSection.style.display = 'flex';
+  if (movesSection) movesSection.style.display = 'flex';
+  if (demoSection) demoSection.style.display = 'none';
   
   keyMomentsList.innerHTML = '';
   
@@ -1436,11 +1971,9 @@ function displayKeyMoments() {
     chip.className = `moment-chip ${moment.type}`;
     chip.dataset.moveIndex = moment.moveIndex;
     
-    const icon = getKeyMomentIcon(moment.type);
     const moveNum = Math.floor(moment.moveIndex / 2) + 1;
     
     chip.innerHTML = `
-      <span class="chip-icon">${icon}</span>
       <span class="chip-move">${moveNum}. ${moment.move}</span>
     `;
     
@@ -1606,11 +2139,36 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
     
     // Small delay to ensure stop is processed
     setTimeout(() => {
-      // Start new analysis
-      console.log(`🔍 Starting analysis: move ${moveIndex + 1}, depth ${targetDepth}, fen: ${fen.split(' ')[0]}`);
-      stockfish.postMessage(`position fen ${fen}`);
+      // Validate FEN format - must include all 6 fields
+      const fenParts = fen.split(' ');
+      if (fenParts.length < 2) {
+        console.error(`❌ Invalid FEN (missing active color): ${fen}`);
+        finishAnalysis('invalid fen');
+        return;
+      }
+      
+      // Ensure FEN has all required fields (position, active color, castling, en passant, halfmove, fullmove)
+      let fullFen = fen;
+      if (fenParts.length < 6) {
+        // Reconstruct full FEN with defaults
+        const position = fenParts[0];
+        const activeColor = fenParts[1] || 'w'; // Default to white if missing
+        const castling = fenParts[2] || '-';
+        const enPassant = fenParts[3] || '-';
+        const halfmove = fenParts[4] || '0';
+        const fullmove = fenParts[5] || '1';
+        fullFen = `${position} ${activeColor} ${castling} ${enPassant} ${halfmove} ${fullmove}`;
+        console.warn(`⚠️ Incomplete FEN, reconstructed: ${fullFen}`);
+      }
+      
+      // Log the active color for debugging
+      const activeColor = fenParts[1];
+      console.log(`🔍 Starting analysis: move ${moveIndex + 1}, depth ${targetDepth}, active: ${activeColor}, fen: ${fullFen.split(' ')[0]}`);
+      
+      // Start new analysis with full FEN
+      stockfish.postMessage(`position fen ${fullFen}`);
       stockfish.postMessage(`go depth ${targetDepth}`);
-    }, 50);
+    }, 100); // Increased delay to ensure stop is processed
     
     if (moveIndex % 10 === 0 || moveIndex === 0) {
       console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 30)}...`);
@@ -1883,9 +2441,9 @@ function displayGameSummary() {
     const analysisText = document.getElementById('analysisText');
     const analysisIcon = document.getElementById('analysisIcon');
     
-    if (analysisMove) analysisMove.textContent = '📊 Game Overview';
+    if (analysisMove) analysisMove.textContent = 'Game Overview';
     if (analysisText) analysisText.textContent = gameSummary;
-    if (analysisIcon) analysisIcon.textContent = '📋';
+    if (analysisIcon) analysisIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
   }
 }
 
@@ -2271,19 +2829,22 @@ function updateMoveAnalysisPanel(moveIndex) {
   const isWhite = moveIndex % 2 === 0;
   const player = isWhite ? 'White' : 'Black';
   
-  // Set icon based on annotation
+  // Set icon based on annotation (using SVG icons)
+  const chartIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>';
+  const checkIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  
   if (analysis) {
     if (analysis.annotation === '!!') {
-      iconEl.textContent = '💥';
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>';
     } else if (analysis.annotation === '!') {
-      iconEl.textContent = '⚠️';
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
     } else if (analysis.annotation === '?!') {
-      iconEl.textContent = '❓';
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
     } else {
-      iconEl.textContent = '✓';
+      iconEl.innerHTML = checkIcon;
     }
   } else {
-    iconEl.textContent = '📊';
+    iconEl.innerHTML = chartIcon;
   }
   
   // Move notation
@@ -2325,7 +2886,7 @@ function resetMoveAnalysisPanel() {
   const evalEl = document.getElementById('analysisEval');
   const hintEl = document.getElementById('bestMoveHint');
   
-  if (iconEl) iconEl.textContent = '📊';
+  if (iconEl) iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>';
   if (moveEl) moveEl.textContent = 'Ready to analyze';
   if (textEl) textEl.textContent = 'Click Play or use arrows to step through the game';
   if (evalEl) evalEl.style.display = 'none';
@@ -2373,11 +2934,12 @@ function playMoves() {
   
   isPlaying = true;
   
-  // Update button visibility: hide play, show pause
-  const playBtn = document.getElementById('playBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  if (playBtn) playBtn.style.display = 'none';
-  if (pauseBtn) pauseBtn.style.display = 'flex';
+  // Update play/pause button to show pause icon
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (playPauseBtn) {
+    playPauseBtn.textContent = '⏸';
+    playPauseBtn.title = 'Pause (Space)';
+  }
   
   // Speak intro summary if starting from beginning
   if (currentMoveIndex === -1 && gameSummary) {
@@ -2408,13 +2970,13 @@ async function speakGameIntro() {
   let intro = "Let's review this game! ";
   intro += gameSummary;
   
-  // Try ElevenLabs first (with password check)
-  if (typeof window.speakWithElevenLabs === 'function') {
-    const success = await usePremiumVoiceIfUnlocked(() => window.speakWithElevenLabs(intro));
+  // Use Donny Voice if selected and unlocked
+  if (selectedVoiceType === 'donny' && premiumVoiceUnlocked && typeof window.speakWithElevenLabs === 'function') {
+    const success = await window.speakWithElevenLabs(intro);
     if (success) return;
   }
   
-  // Fallback to browser TTS (no password needed)
+  // Fallback to browser TTS
   if (synth && selectedVoice) {
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(intro);
@@ -2431,11 +2993,12 @@ function pauseMoves() {
     playInterval = null;
   }
   
-  // Update button visibility: show play, hide pause
-  const playBtn = document.getElementById('playBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-  if (playBtn) playBtn.style.display = 'flex';
-  if (pauseBtn) pauseBtn.style.display = 'none';
+  // Update play/pause button to show play icon
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (playPauseBtn) {
+    playPauseBtn.textContent = '▶';
+    playPauseBtn.title = 'Play (Space)';
+  }
 }
 
 function stopMoves() {
@@ -2535,11 +3098,11 @@ async function speakMoveWithAnalysis(moveIndex) {
   // Skip if no text
   if (!text || text.trim().length === 0) return;
   
-  // Try ElevenLabs first (with password check)
-  if (typeof window.speakWithElevenLabs === 'function') {
-    const success = await usePremiumVoiceIfUnlocked(() => window.speakWithElevenLabs(text));
+  // Use Donny Voice if selected and unlocked
+  if (selectedVoiceType === 'donny' && premiumVoiceUnlocked && typeof window.speakWithElevenLabs === 'function') {
+    const success = await window.speakWithElevenLabs(text);
     if (success) {
-      console.log('✓ Spoke with ElevenLabs (premium voice)');
+      console.log('✓ Spoke with Donny Voice (ElevenLabs)');
       return;
     }
   }
@@ -2585,4 +3148,115 @@ async function speakMoveWithAnalysis(moveIndex) {
   };
   
   synth.speak(utterance);
+}
+
+// Password Dialog Functions
+function showPasswordDialog(callback) {
+  const passwordModal = document.getElementById('passwordModal');
+  const passwordInput = document.getElementById('passwordInput');
+  const passwordHint = document.getElementById('passwordHint');
+  const passwordSubmitBtn = document.getElementById('passwordSubmitBtn');
+  const passwordCancelBtn = document.getElementById('passwordCancelBtn');
+  const passwordModalContent = passwordModal?.querySelector('.password-modal-content');
+  
+  if (!passwordModal || !passwordInput) {
+    console.warn('Password modal elements not found');
+    callback(false);
+    return;
+  }
+  
+  // Reset state
+  passwordInput.value = '';
+  passwordHint.textContent = '';
+  passwordHint.classList.remove('show');
+  passwordModal.style.display = 'flex';
+  setTimeout(() => passwordInput.focus(), 100);
+  
+  // Handle submit
+  const handleSubmit = () => {
+    const password = passwordInput.value.trim();
+    
+    if (password === VOICE_PASSWORD) {
+      passwordModal.style.display = 'none';
+      callback(true);
+    } else if (password) {
+      // Wrong password
+      passwordHint.textContent = 'Incorrect password. Try again!';
+      passwordHint.classList.add('show');
+      passwordInput.value = '';
+      passwordInput.focus();
+      // Shake animation
+      if (passwordModalContent) {
+        passwordModalContent.classList.add('shake');
+        setTimeout(() => {
+          passwordModalContent.classList.remove('shake');
+        }, 500);
+      }
+    }
+  };
+  
+  // Handle cancel
+  const handleCancel = () => {
+    passwordModal.style.display = 'none';
+    callback(false);
+  };
+  
+  // Handle submit button click
+  passwordSubmitBtn.onclick = (e) => {
+    e.preventDefault();
+    handleSubmit();
+  };
+  
+  // Handle cancel button click
+  passwordCancelBtn.onclick = () => {
+    handleCancel();
+  };
+  
+  // Handle Enter/Escape keys
+  passwordInput.onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleCancel();
+    }
+  };
+  
+  // Click backdrop to close
+  const backdrop = passwordModal.querySelector('.modal-backdrop');
+  if (backdrop) {
+    backdrop.onclick = handleCancel;
+  }
+}
+
+function showToast(type, message) {
+  const toast = document.getElementById('toast');
+  const toastIcon = document.getElementById('toastIcon');
+  const toastMessage = document.getElementById('toastMessage');
+  
+  if (!toast || !toastIcon || !toastMessage) return;
+  
+  // Set icon based on type
+  if (type === 'success') {
+    toast.className = 'toast success';
+    toastIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  } else if (type === 'error') {
+    toast.className = 'toast error';
+    toastIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+  }
+  
+  toastMessage.textContent = message;
+  toast.style.display = 'flex';
+  
+  // Auto-hide after 3 seconds
+  setTimeout(() => {
+    toast.style.display = 'none';
+  }, 3000);
+}
+
+// Make functions globally available
+if (typeof window !== 'undefined') {
+  window.showPasswordDialog = showPasswordDialog;
+  window.showToast = showToast;
 }
