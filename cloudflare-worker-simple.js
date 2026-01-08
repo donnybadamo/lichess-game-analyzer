@@ -16,12 +16,18 @@ export default {
     
     // Only allow POST requests
     if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response('Method not allowed', { 
+        status: 405,
+        headers: { 'Access-Control-Allow-Origin': '*' }
+      });
     }
     
     const url = new URL(request.url);
     if (url.pathname !== '/get-secret') {
-      return new Response('Not found', { status: 404 });
+      return new Response('Not found', { 
+        status: 404,
+        headers: { 'Access-Control-Allow-Origin': '*' }
+      });
     }
     
     try {
@@ -30,27 +36,35 @@ export default {
       if (!secretName) {
         return new Response(JSON.stringify({ error: 'secretName is required' }), {
           status: 400,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
         });
       }
       
       // Map secret names to Cloudflare Worker secrets
       // Supports multiple naming conventions
       const secretMap = {
-        // API Key variations
+        // ElevenLabs API Key variations
         'elevenlabs-api-key': env.ELEVENLABS_API_KEY,
         'elevenlabsApiKey': env.ELEVENLABS_API_KEY,
         'ELEVENLABS_API_KEY': env.ELEVENLABS_API_KEY,
         
-        // Agent ID variations
+        // ElevenLabs Agent ID variations
         'elevenlabs-agent-id': env.ELEVENLABS_AGENT_ID,
         'elevenlabsAgentId': env.ELEVENLABS_AGENT_ID,
         'ELEVENLABS_AGENT_ID': env.ELEVENLABS_AGENT_ID,
         
-        // Voice ID variations
+        // ElevenLabs Voice ID variations
         'elevenlabs-voice-id': env.ELEVENLABS_VOICE_ID,
         'elevenlabsVoiceId': env.ELEVENLABS_VOICE_ID,
         'ELEVENLABS_VOICE_ID': env.ELEVENLABS_VOICE_ID,
+        
+        // Google TTS API Key variations
+        'google-tts-api-key': env.GOOGLE_TTS_API_KEY,
+        'googleTTSApiKey': env.GOOGLE_TTS_API_KEY,
+        'GOOGLE_TTS_API_KEY': env.GOOGLE_TTS_API_KEY,
       };
       
       const secretValue = secretMap[secretName];
@@ -62,7 +76,10 @@ export default {
           availableSecrets: Object.keys(secretMap).filter(k => secretMap[k])
         }), {
           status: 404,
-          headers: { 'Content-Type': 'application/json' }
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+          }
         });
       }
       
@@ -82,7 +99,10 @@ export default {
         message: error.message 
       }), {
         status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*'
+        }
       });
     }
   }
