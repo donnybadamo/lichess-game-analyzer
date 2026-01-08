@@ -1146,6 +1146,8 @@ function displayMoves() {
     whiteCell.id = `move-${i}`;
     whiteCell.innerHTML = `<span class="piece-dot white-dot"></span><span class="move-san">${whiteMove.san}</span><span class="move-icon"></span>`;
     whiteCell.addEventListener('click', () => goToMove(i));
+    whiteCell.addEventListener('mouseenter', () => previewMove(i));
+    whiteCell.addEventListener('mouseleave', () => clearPreview());
     movesList.appendChild(whiteCell);
     
     // Black's move (if exists)
@@ -1157,6 +1159,8 @@ function displayMoves() {
       blackCell.id = `move-${i + 1}`;
       blackCell.innerHTML = `<span class="piece-dot black-dot"></span><span class="move-san">${blackMove.san}</span><span class="move-icon"></span>`;
       blackCell.addEventListener('click', () => goToMove(i + 1));
+      blackCell.addEventListener('mouseenter', () => previewMove(i + 1));
+      blackCell.addEventListener('mouseleave', () => clearPreview());
       movesList.appendChild(blackCell);
     } else {
       // Empty cell for alignment
@@ -2067,6 +2071,53 @@ function highlightMove(move) {
         drawBestMoveArrow(bestMove, annotation);
       }
     }
+  }
+}
+
+let previewState = null; // Store current state when previewing
+
+function previewMove(index) {
+  if (index < 0 || index >= moves.length) return;
+  
+  // Save current state if not already saved
+  if (previewState === null) {
+    previewState = {
+      position: chess.fen(),
+      moveIndex: currentMoveIndex
+    };
+  }
+  
+  // Create temporary chess instance to show the position at this move
+  const ChessClass = window.Chess;
+  const tempChess = new ChessClass();
+  
+  for (let i = 0; i <= index; i++) {
+    tempChess.move(moves[i]);
+  }
+  
+  // Show the position
+  board.position(tempChess.fen());
+  
+  // Highlight the move
+  if (moves[index]) {
+    highlightMove(moves[index]);
+  }
+}
+
+function clearPreview() {
+  if (previewState !== null) {
+    // Restore previous position
+    chess.load(previewState.position);
+    board.position(previewState.position);
+    
+    // Restore move highlights
+    if (previewState.moveIndex >= 0 && previewState.moveIndex < moves.length) {
+      highlightMove(moves[previewState.moveIndex]);
+    } else {
+      clearMoveHighlights();
+    }
+    
+    previewState = null;
   }
 }
 

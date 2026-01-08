@@ -665,6 +665,9 @@ body {
 
 .move-cell:hover {
   background: var(--bg-hover);
+  border: 1px solid var(--primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(230, 122, 40, 0.3);
 }
 
 .move-cell.active {
