@@ -1988,6 +1988,9 @@ function resetToStart() {
 function goToMove(index) {
   if (index < -1 || index >= moves.length) return;
   
+  // Clear any preview state
+  clearPreview();
+  
   // Reset exploration mode
   isExploringLine = false;
   
