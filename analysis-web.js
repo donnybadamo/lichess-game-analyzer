@@ -917,7 +917,7 @@ function updateAnalysisPanelWithIntro() {
           <li>🔍 <strong>Stockfish 16</strong> engine analysis</li>
           <li>🎯 <strong>Move-by-move</strong> commentary</li>
           <li>⚡ <strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
-          <li>🔊 <strong>Voice narration</strong> with AI voices</li>
+          <li>🔊 <strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
           <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
         </ul>
         <p style="margin-top: 16px; margin-bottom: 0;">
