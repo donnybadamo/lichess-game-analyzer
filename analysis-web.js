@@ -12,6 +12,8 @@ let gameSummary = null;
 let isPlaying = false;
 let playInterval = null;
 let isInitializing = false; // Flag to prevent board updates during initialization
+let resizeObserver = null; // ResizeObserver for board container
+let resizeTimeout = null; // Debounce timeout for resize
 let voiceEnabled = true;
 let synth = window.speechSynthesis;
 let selectedVoice = null;
@@ -729,6 +731,9 @@ async function initializeGameWithoutAnalysis(pgn) {
       board.position('start');
       // Small delay to let board initialize
       await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Setup resize handler
+      setupBoardResizeHandler();
     }
     
     // CRITICAL: Ensure board is ALWAYS at start position during initialization
@@ -966,20 +971,8 @@ async function initializeGame(pgn) {
       // Force a refresh
       board.position('start');
       
-      // Add resize handler to keep board properly sized
-      let resizeTimeout;
-      window.addEventListener('resize', () => {
-        clearTimeout(resizeTimeout);
-        resizeTimeout = setTimeout(() => {
-          if (board) {
-            board.resize();
-            // Redraw arrows after resize
-            if (currentMoveIndex >= 0 && moves[currentMoveIndex]) {
-              highlightMove(moves[currentMoveIndex]);
-            }
-          }
-        }, 150);
-      });
+      // Setup resize handling for board
+      setupBoardResizeHandler();
       
     } catch (err) {
       console.error('Chessboard initialization error:', err);
@@ -1698,6 +1691,9 @@ async function initializeBoardWithStartingPosition() {
       board.orientation('white');
       boardOrientation = 'white';
       console.log('✅ Board initialized with starting position (white on bottom)');
+      
+      // Setup resize handler
+      setupBoardResizeHandler();
     }
   } catch (err) {
     console.error('Error initializing board:', err);
@@ -2392,8 +2388,9 @@ async function analyzeGame() {
     const isWhiteMove = i % 2 === 0;
     const player = isWhiteMove ? 'White' : 'Black';
     
-    // Detect key moments
-    if (evaluation.annotation === '!!') {
+    // Detect key moments - use correct annotation symbols
+    // ?? = blunder, ? = mistake, ?! = inaccuracy, ! = best, !! = brilliant
+    if (evaluation.annotation === '??') {
       // Blunder
       keyMoments.push({
         moveIndex: i,
@@ -2405,7 +2402,7 @@ async function analyzeGame() {
         bestMove: evaluation.bestMove,
         description: `${player} blunders with ${move.san}. ${evaluation.bestMove ? `${evaluation.bestMove} was much better.` : ''}`
       });
-    } else if (evaluation.annotation === '!' && evalSwing > 100) {
+    } else if (evaluation.annotation === '?') {
       // Mistake
       keyMoments.push({
         moveIndex: i,
@@ -2417,8 +2414,22 @@ async function analyzeGame() {
         bestMove: evaluation.bestMove,
         description: `${player} makes a mistake with ${move.san} that changes the game.`
       });
-    } else if (evalSwing > 200 && i > 0) {
-      // Major turning point
+    } else if (evaluation.annotation === '?!') {
+      // Inaccuracy - only show if significant
+      if (evalSwing > 100) {
+        keyMoments.push({
+          moveIndex: i,
+          type: 'inaccuracy',
+          move: move.san,
+          player: player,
+          evalBefore: prevEvalForMoments,
+          evalAfter: currentCp,
+          bestMove: evaluation.bestMove,
+          description: `${player} makes an inaccuracy with ${move.san}.`
+        });
+      }
+    } else if (evalSwing > 200 && i > 0 && !evaluation.annotation) {
+      // Major turning point (no annotation but big eval swing)
       const direction = currentCp > prevEvalForMoments ? 'White' : 'Black';
       keyMoments.push({
         moveIndex: i,
@@ -2429,7 +2440,7 @@ async function analyzeGame() {
         evalAfter: currentCp,
         description: `Turning point! After ${move.san}, ${direction} gains a significant advantage.`
       });
-    } else if (evaluation.annotation === '!' && evalSwing < 50) {
+    } else if (evaluation.annotation === '!!') {
       // Brilliant/excellent move
       keyMoments.push({
         moveIndex: i,
@@ -2438,7 +2449,18 @@ async function analyzeGame() {
         player: player,
         evalBefore: prevEvalForMoments,
         evalAfter: currentCp,
-        description: `Excellent move by ${player}! ${move.san} is the engine's top choice.`
+        description: `Excellent move by ${player}! ${move.san} is a brilliant choice.`
+      });
+    } else if (evaluation.annotation === '!' && evalSwing < 50) {
+      // Best move
+      keyMoments.push({
+        moveIndex: i,
+        type: 'best',
+        move: move.san,
+        player: player,
+        evalBefore: prevEvalForMoments,
+        evalAfter: currentCp,
+        description: `Best move by ${player}! ${move.san} is the engine's top choice.`
       });
     }
     
@@ -2449,10 +2471,10 @@ async function analyzeGame() {
       openingMoves++;
     }
     
-    // Count mistakes/blunders
-    if (evaluation.annotation === '!!') {
+    // Count mistakes/blunders - use correct annotation symbols
+    if (evaluation.annotation === '??') {
       totalBlunders++;
-    } else if (evaluation.annotation === '!') {
+    } else if (evaluation.annotation === '?') {
       totalMistakes++;
     } else if (evaluation.annotation === '?!') {
       totalInaccuracies++;
@@ -2750,12 +2772,14 @@ function determineAnnotation(prevEval, currEval, moveIndex) {
   const absDiff = Math.abs(evalDiff);
   
   if (absDiff > 300) {
-    return '!!'; // Blunder - lost significant advantage
+    return '??'; // Blunder - lost significant advantage
   } else if (absDiff > 150) {
-    return '!'; // Mistake - lost advantage
+    return '?'; // Mistake - lost advantage
   } else if (absDiff > 75) {
     return '?!'; // Inaccuracy - small loss
   } else if (absDiff < 30 && evalDiff < -50) {
+    return '!!'; // Brilliant move - gained significant advantage
+  } else if (absDiff < 30 && evalDiff < -20) {
     return '!'; // Best move - gained advantage
   }
   return ''; // Good move
@@ -3359,6 +3383,112 @@ function clearPreview() {
     
     previewState = null;
   }
+}
+
+function setupBoardResizeHandler() {
+  // Clean up existing handlers
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+  
+  // Remove existing window resize listener if any
+  window.removeEventListener('resize', handleWindowResize);
+  
+  const boardEl = document.getElementById('board');
+  const boardArea = document.querySelector('.board-area');
+  
+  if (!boardEl || !boardArea || !board) {
+    console.warn('Cannot setup resize handler: board elements not ready');
+    return;
+  }
+  
+  // Function to handle resize
+  const performResize = () => {
+    if (!board) return;
+    
+    try {
+      // Resize the board - this is the key call that fixes the stuck board
+      board.resize();
+      
+      // Update SVG arrows container size to match board
+      const arrowsSvg = document.getElementById('moveArrows');
+      if (arrowsSvg && boardEl) {
+        const boardRect = boardEl.getBoundingClientRect();
+        if (boardRect.width > 0 && boardRect.height > 0) {
+          arrowsSvg.setAttribute('width', boardRect.width);
+          arrowsSvg.setAttribute('height', boardRect.height);
+          arrowsSvg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+          
+          // Redraw arrows after resize
+          if (currentMoveIndex >= 0 && moves[currentMoveIndex]) {
+            highlightMove(moves[currentMoveIndex]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error during board resize:', error);
+    }
+  };
+  
+  // Use ResizeObserver for better performance and to catch all size changes
+  // This catches container size changes, not just window resize
+  resizeObserver = new ResizeObserver((entries) => {
+    // Debounce resize calls
+    if (resizeTimeout) {
+      clearTimeout(resizeTimeout);
+    }
+    
+    resizeTimeout = setTimeout(() => {
+      performResize();
+    }, 100); // Debounce delay
+  });
+  
+  // Observe the board area container - this will catch any size changes
+  resizeObserver.observe(boardArea);
+  
+  // Also observe the board element itself as a backup
+  resizeObserver.observe(boardEl);
+  
+  // Also listen to window resize as fallback
+  window.addEventListener('resize', handleWindowResize);
+  
+  console.log('✅ Board resize handler setup complete');
+}
+
+function handleWindowResize() {
+  // Debounce window resize
+  if (resizeTimeout) {
+    clearTimeout(resizeTimeout);
+  }
+  
+  resizeTimeout = setTimeout(() => {
+    if (!board) return;
+    
+    try {
+      // Resize the board
+      board.resize();
+      
+      // Update SVG arrows container size
+      const arrowsSvg = document.getElementById('moveArrows');
+      const boardEl = document.getElementById('board');
+      if (arrowsSvg && boardEl) {
+        const boardRect = boardEl.getBoundingClientRect();
+        if (boardRect.width > 0 && boardRect.height > 0) {
+          arrowsSvg.setAttribute('width', boardRect.width);
+          arrowsSvg.setAttribute('height', boardRect.height);
+          arrowsSvg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
+          
+          // Redraw arrows after resize
+          if (currentMoveIndex >= 0 && moves[currentMoveIndex]) {
+            highlightMove(moves[currentMoveIndex]);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error during window resize:', error);
+    }
+  }, 100);
 }
 
 function clearMoveHighlights() {
