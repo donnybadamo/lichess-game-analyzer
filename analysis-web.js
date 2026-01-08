@@ -19,6 +19,65 @@ let googleTTSApiKey = null;
 let boardOrientation = 'white'; // 'white' or 'black'
 let isExploringLine = false; // Track if user is exploring alternate moves
 
+// Password protection for premium voice
+const VOICE_PASSWORD = 'badamo';
+let premiumVoiceUnlocked = false;
+
+/**
+ * Check if premium voice is unlocked
+ * @returns {Promise<boolean>} True if password is correct
+ */
+async function checkVoicePassword() {
+  // Check if already unlocked in this session
+  if (premiumVoiceUnlocked) return true;
+  
+  // Check sessionStorage (survives page refresh but clears on tab close)
+  const stored = sessionStorage.getItem('premiumVoiceUnlocked');
+  if (stored === 'true') {
+    premiumVoiceUnlocked = true;
+    return true;
+  }
+  
+  // Prompt for password
+  const password = prompt('🔐 Enter password to use premium voice (ElevenLabs/Google TTS):');
+  
+  if (password === VOICE_PASSWORD) {
+    premiumVoiceUnlocked = true;
+    sessionStorage.setItem('premiumVoiceUnlocked', 'true');
+    console.log('✅ Premium voice unlocked');
+    return true;
+  } else if (password !== null) {
+    // User entered password but it was wrong
+    alert('❌ Incorrect password. Using browser voice instead.');
+    console.log('❌ Incorrect password, using browser voice');
+    return false;
+  } else {
+    // User cancelled prompt
+    console.log('ℹ️ Password prompt cancelled, using browser voice');
+    return false;
+  }
+}
+
+/**
+ * Wrapper to check password before using premium voice
+ * @param {Function} premiumVoiceFn - Function that returns a Promise<boolean>
+ * @returns {Promise<boolean>} True if premium voice was used successfully
+ */
+async function usePremiumVoiceIfUnlocked(premiumVoiceFn) {
+  const unlocked = await checkVoicePassword();
+  if (!unlocked) {
+    return false; // Will fall back to browser voice
+  }
+  
+  // Password is correct, try premium voice
+  try {
+    return await premiumVoiceFn();
+  } catch (error) {
+    console.error('Premium voice error:', error);
+    return false; // Fall back to browser voice on error
+  }
+}
+
 // Board drag/drop handlers
 function onDragStart(source, piece, position, orientation) {
   // Don't allow picking up pieces if game is over
@@ -2031,17 +2090,19 @@ async function speakGameIntro() {
   let intro = "Let's review this game! ";
   intro += gameSummary;
   
-  // Try ElevenLabs first
+  // Try ElevenLabs first (with password check)
   if (typeof window.speakWithElevenLabs === 'function') {
-    try {
-      const success = await window.speakWithElevenLabs(intro);
-      if (success) return;
-    } catch (e) {
-      console.log('ElevenLabs intro failed, using fallback');
-    }
+    const success = await usePremiumVoiceIfUnlocked(() => window.speakWithElevenLabs(intro));
+    if (success) return;
   }
   
-  // Fallback to browser TTS
+  // Fallback to Google TTS (with password check)
+  if (useGoogleTTS) {
+    const success = await usePremiumVoiceIfUnlocked(() => speakWithGoogleTTS(intro));
+    if (success) return;
+  }
+  
+  // Final fallback to browser TTS (no password needed)
   if (synth && selectedVoice) {
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(intro);
@@ -2156,22 +2217,18 @@ async function speakMoveWithAnalysis(moveIndex) {
   // Skip if no text
   if (!text || text.trim().length === 0) return;
   
-  // Try ElevenLabs first (premium voice with agent)
+  // Try ElevenLabs first (with password check)
   if (typeof window.speakWithElevenLabs === 'function') {
-    try {
-      const success = await window.speakWithElevenLabs(text);
-      if (success) {
-        console.log('✓ Spoke with ElevenLabs (premium voice)');
-        return;
-      }
-    } catch (error) {
-      console.log('ElevenLabs failed, using fallback:', error);
+    const success = await usePremiumVoiceIfUnlocked(() => window.speakWithElevenLabs(text));
+    if (success) {
+      console.log('✓ Spoke with ElevenLabs (premium voice)');
+      return;
     }
   }
   
-  // Fallback to Google TTS
+  // Fallback to Google TTS (with password check)
   if (useGoogleTTS) {
-    const success = await speakWithGoogleTTS(text);
+    const success = await usePremiumVoiceIfUnlocked(() => speakWithGoogleTTS(text));
     if (success) {
       console.log('Spoke with Google TTS (masculine voice)');
       return;

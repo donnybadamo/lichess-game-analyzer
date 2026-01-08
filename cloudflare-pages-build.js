@@ -1,14 +1,8 @@
 // Build script for Cloudflare Pages
-// This script updates chrome.runtime.getURL() to use relative paths for Cloudflare
+// This script prepares web app files for Cloudflare Pages deployment
 
 const fs = require('fs');
 const path = require('path');
-
-const filesToUpdate = [
-  'load-libs.js',
-  'init.js',
-  'analysis.js'
-];
 
 const outputDir = './cloudflare-dist';
 
@@ -17,12 +11,13 @@ if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
 }
 
-// Copy files that don't need changes
+// Copy web app files that don't need changes
 const filesToCopy = [
-  'analysis.html',
+  'index.html',               // Web app entry point
+  'analysis-web.js',          // Web version (uses localStorage, not chrome.storage)
   'analysis.css',
-  'elevenlabs-tts.js',
-  'init.js'  // Needed for loading libraries
+  'elevenlabs-tts-web.js',    // Web version of ElevenLabs TTS
+  'cloudflare-secrets-web.js' // Secrets helper for web app
 ];
 
 filesToCopy.forEach(file => {
@@ -38,7 +33,6 @@ filesToCopy.forEach(file => {
 const libsSrc = path.join(__dirname, 'libs');
 const libsDest = path.join(outputDir, 'libs');
 if (fs.existsSync(libsSrc)) {
-  // Copy recursively
   function copyRecursive(src, dest) {
     if (!fs.existsSync(dest)) {
       fs.mkdirSync(dest, { recursive: true });
@@ -58,31 +52,28 @@ if (fs.existsSync(libsSrc)) {
   console.log('✓ Copied libs/ directory');
 }
 
-// Update files that use chrome.runtime.getURL()
-filesToUpdate.forEach(file => {
-  const filePath = path.join(__dirname, file);
-  if (!fs.existsSync(filePath)) {
-    console.log(`⚠️ File not found: ${file}`);
-    return;
-  }
-  
-  let content = fs.readFileSync(filePath, 'utf-8');
-  
-  // Replace chrome.runtime.getURL() with relative paths
-  content = content.replace(
-    /chrome\.runtime\.getURL\(['"]([^'"]+)['"]\)/g,
-    (match, url) => {
-      // Remove leading slash if present
-      const cleanUrl = url.startsWith('/') ? url.substring(1) : url;
-      return `'${cleanUrl}'`;
+// Copy icons directory (optional)
+const iconsSrc = path.join(__dirname, 'icons');
+const iconsDest = path.join(outputDir, 'icons');
+if (fs.existsSync(iconsSrc)) {
+  function copyRecursive(src, dest) {
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
     }
-  );
-  
-  // Write updated file
-  const destPath = path.join(outputDir, file);
-  fs.writeFileSync(destPath, content, 'utf-8');
-  console.log(`✓ Updated ${file}`);
-});
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        copyRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+  copyRecursive(iconsSrc, iconsDest);
+  console.log('✓ Copied icons/ directory');
+}
 
 console.log('\n✅ Build complete! Output in:', outputDir);
 console.log('\nDeploy the contents of cloudflare-dist/ to Cloudflare Pages');

@@ -126,7 +126,6 @@
 
   <!-- Load libraries and app -->
   <script>
-    // Load libraries in order for web app
     const loadScript = (src) => {
       return new Promise((resolve, reject) => {
         const script = document.createElement('script');
@@ -137,22 +136,42 @@
       });
     };
     
-    // Load jQuery first
-    loadScript('libs/jquery.min.js')
+    // Load secrets helper first (optional - only if using Worker)
+    Promise.resolve()
+      .then(() => loadScript('cloudflare-secrets-web.js').catch(() => {
+        console.log('ℹ️ Cloudflare secrets helper not found, skipping...');
+      }))
+      .then(() => {
+        // Auto-load secrets when page loads (if Worker is configured)
+        if (window.loadElevenLabsCredentials) {
+          return window.loadElevenLabsCredentials().then(() => {
+            if (window.loadGoogleTTSCredentials) {
+              return window.loadGoogleTTSCredentials();
+            }
+          });
+        }
+      })
+      .then(() => {
+        // Load ElevenLabs TTS web version
+        return loadScript('elevenlabs-tts-web.js').catch(() => {
+          console.log('ℹ️ ElevenLabs TTS not found, will use browser voice');
+        });
+      })
+      .then(() => {
+        // Load jQuery
+        return loadScript('libs/jquery.min.js');
+      })
       .then(() => {
         console.log('✓ jQuery loaded');
-        // Load Chess.js ESM module
         return import('./libs/chess-esm.js');
       })
       .then(chessModule => {
         window.Chess = chessModule.Chess;
         console.log('✓ Chess.js loaded');
-        // Load Chessboard
         return loadScript('libs/chessboard.min.js');
       })
       .then(() => {
         console.log('✓ Chessboard loaded');
-        // Load the main analysis script
         return loadScript('analysis-web.js');
       })
       .then(() => {
