@@ -317,6 +317,12 @@ async function initializeAnalysisPage() {
   console.log('Document ready state:', document.readyState);
   console.log('URL:', window.location.href);
   
+  // Hide PGN modal on initialization
+  const pgnModal = document.getElementById('pgnModal');
+  if (pgnModal) {
+    pgnModal.style.display = 'none';
+  }
+  
   initializeVoice();
   
   await waitForLibraries();
@@ -743,8 +749,18 @@ function setupEventListeners() {
     });
     
     if (closePgnModal) {
-      closePgnModal.addEventListener('click', () => {
+      closePgnModal.addEventListener('click', (e) => {
+        e.stopPropagation();
         pgnModal.style.display = 'none';
+      });
+    }
+    
+    // Close modal when clicking outside (on the backdrop)
+    if (pgnModal) {
+      pgnModal.addEventListener('click', (e) => {
+        if (e.target === pgnModal) {
+          pgnModal.style.display = 'none';
+        }
       });
     }
     
