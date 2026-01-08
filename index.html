@@ -36,51 +36,51 @@
     <div class="header-spacer"></div>
   </header>
 
-  <main class="page-wrapper">
-    <div class="review-container">
+  <main class="container-fluid p-0 h-100">
+    <div class="row g-0 h-100">
       <!-- Left: Board Section -->
-      <div class="board-section">
-      <div class="player-bar player-top" id="playerBlack">
-        <span class="player-name">Black</span>
-        <span class="player-rating"></span>
-      </div>
-      
-      <div class="board-with-eval">
-        <div class="eval-bar" id="evaluation">
-          <div class="eval-fill" id="evalBar"></div>
-          <span class="eval-text" id="evalText">0.0</span>
-          <span class="sf-badge" id="sfBadge" title="Stockfish 16">SF</span>
+      <div class="col-lg-6 col-xl-5 d-flex flex-column board-section">
+        <div class="player-bar player-top" id="playerBlack">
+          <span class="player-name">Black</span>
+          <span class="player-rating"></span>
         </div>
-        <div class="board-area">
-          <div id="board"></div>
-          <svg id="moveArrows" class="move-arrows"></svg>
+        
+        <div class="board-with-eval flex-grow-1 d-flex align-items-center justify-content-center">
+          <div class="eval-bar" id="evaluation">
+            <div class="eval-fill" id="evalBar"></div>
+            <span class="eval-text" id="evalText">0.0</span>
+            <span class="sf-badge" id="sfBadge" title="Stockfish 16">SF</span>
+          </div>
+          <div class="board-area">
+            <div id="board"></div>
+            <svg id="moveArrows" class="move-arrows"></svg>
+          </div>
+        </div>
+        
+        <div class="player-bar player-bottom" id="playerWhite">
+          <span class="player-name">White</span>
+          <span class="player-rating"></span>
+        </div>
+        
+        <div class="nav-controls">
+          <button id="stopBtn" class="nav-btn" title="Reset">⏮</button>
+          <button id="prevBtn" class="nav-btn" title="Previous">◀</button>
+          <button id="playBtn" class="nav-btn play-btn" title="Play">▶</button>
+          <button id="nextBtn" class="nav-btn" title="Next">▶</button>
+          <button id="pauseBtn" class="nav-btn" title="Pause" style="display:none;">⏸</button>
+          <button id="endBtn" class="nav-btn" title="End">⏭</button>
+        </div>
+        <div class="nav-controls-secondary">
+          <button id="flipBtn" class="nav-btn" title="Flip Board">🔄</button>
+          <label class="voice-toggle">
+            <input type="checkbox" id="voiceToggle" checked>
+            <span class="voice-icon">🔊</span>
+          </label>
         </div>
       </div>
       
-      <div class="player-bar player-bottom" id="playerWhite">
-        <span class="player-name">White</span>
-        <span class="player-rating"></span>
-      </div>
-      
-      <div class="nav-controls">
-        <button id="stopBtn" class="nav-btn" title="Reset">⏮</button>
-        <button id="prevBtn" class="nav-btn" title="Previous">◀</button>
-        <button id="playBtn" class="nav-btn play-btn" title="Play">▶</button>
-        <button id="nextBtn" class="nav-btn" title="Next">▶</button>
-        <button id="pauseBtn" class="nav-btn" title="Pause" style="display:none;">⏸</button>
-        <button id="endBtn" class="nav-btn" title="End">⏭</button>
-      </div>
-      <div class="nav-controls-secondary">
-        <button id="flipBtn" class="nav-btn" title="Flip Board">🔄</button>
-        <label class="voice-toggle">
-          <input type="checkbox" id="voiceToggle" checked>
-          <span class="voice-icon">🔊</span>
-        </label>
-      </div>
-    </div>
-    
-    <!-- Right: Analysis Panel -->
-    <div class="analysis-panel">
+      <!-- Right: Analysis Panel -->
+      <div class="col-lg-6 col-xl-7 analysis-panel">
       
       <!-- Current Move Analysis -->
       <div class="move-analysis" id="moveAnalysis">
@@ -119,8 +119,8 @@
       
       <!-- Game Info Footer -->
       <div class="game-meta" id="gameMeta"></div>
+      </div>
     </div>
-  </div>
   </main>
   
   <!-- PGN Input Modal -->
