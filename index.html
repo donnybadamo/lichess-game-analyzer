@@ -160,11 +160,7 @@
       .then(() => {
         // Auto-load secrets when page loads (if Worker is configured)
         if (window.loadElevenLabsCredentials) {
-          return window.loadElevenLabsCredentials().then(() => {
-            if (window.loadGoogleTTSCredentials) {
-              return window.loadGoogleTTSCredentials();
-            }
-          });
+          return window.loadElevenLabsCredentials();
         }
       })
       .then(() => {

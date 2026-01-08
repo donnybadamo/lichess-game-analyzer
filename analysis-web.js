@@ -1314,9 +1314,21 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
       if (resolved) return;
       resolved = true;
       
+      // Ensure we have a valid evaluation
+      let finalCp = 0;
+      let finalMate = null;
+      
+      if (evaluation) {
+        if (evaluation.mate !== undefined && evaluation.mate !== null) {
+          finalMate = evaluation.mate;
+        } else if (evaluation.cp !== undefined && evaluation.cp !== null) {
+          finalCp = evaluation.cp;
+        }
+      }
+      
       const result = { 
-        cp: evaluation?.cp || 0,
-        mate: evaluation?.mate,
+        cp: finalCp,
+        mate: finalMate,
         depth: bestDepth, 
         bestMove: bestMove,
         pv: pv,
@@ -1334,29 +1346,41 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
     };
     
     const timeout = setTimeout(() => {
-      finishAnalysis('timeout');
-    }, 3000); // 3 second timeout per position
+      // If we have an evaluation, use it even on timeout
+      if (evaluation) {
+        finishAnalysis('timeout (with eval)');
+      } else {
+        console.warn(`⚠️ No evaluation received for move ${moveIndex + 1} before timeout`);
+        finishAnalysis('timeout (no eval)');
+      }
+    }, 5000); // 5 second timeout per position
     
     // Create message handler for this analysis
     const handler = (event) => {
       const message = event.data || event;
       
       if (typeof message === 'string') {
-        // Debug: log info messages
-        if (message.startsWith('info') && message.includes('score')) {
+        // Debug: log info messages with scores for troubleshooting
+        if (message.startsWith('info')) {
           // Parse evaluation from info string
+          // Stockfish format: "info depth X score cp/mate Y ..."
           const evalMatch = message.match(/score (cp|mate) (-?\d+)/);
           const depthMatch = message.match(/depth (\d+)/);
           const pvMatch = message.match(/ pv (.+)/);
           
           if (depthMatch) {
-            depth = parseInt(depthMatch[1]);
-            if (depth > bestDepth) bestDepth = depth;
+            const newDepth = parseInt(depthMatch[1]);
+            depth = newDepth;
+            if (newDepth > bestDepth) bestDepth = newDepth;
           }
           
           if (evalMatch) {
             const score = parseInt(evalMatch[2]);
             evaluation = evalMatch[1] === 'mate' ? { mate: score } : { cp: score };
+            // Log evaluation updates for debugging
+            if (depth >= 5) {
+              console.log(`📊 Eval update: depth=${depth} eval=${evalMatch[1] === 'mate' ? 'M' + score : (score/100).toFixed(1)}`);
+            }
           }
           
           if (pvMatch && !quickEval) {
@@ -1373,8 +1397,8 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
             }
           }
           
-          // Stop when we have enough depth
-          const requiredDepth = quickEval ? 6 : 12;
+          // Stop when we have enough depth and an evaluation
+          const requiredDepth = quickEval ? 8 : 12;
           if (depth >= requiredDepth && evaluation) {
             clearTimeout(timeout);
             finishAnalysis('depth reached');
@@ -1389,18 +1413,25 @@ async function getPositionEvaluation(fen, moveIndex, quickEval = false) {
             }
           }
           clearTimeout(timeout);
+          // If we have an evaluation, use it; otherwise finishAnalysis will use the last one
           finishAnalysis('bestmove');
         }
       }
     };
     
-    // Set the handler
+    // Stop any previous analysis first
+    stockfish.postMessage('stop');
+    
+    // Set the handler BEFORE sending new commands
     stockfish.onmessage = handler;
     
-    // Stop any previous analysis and start new one
-    stockfish.postMessage('stop');
-    stockfish.postMessage(`position fen ${fen}`);
-    stockfish.postMessage(`go depth ${targetDepth}`);
+    // Small delay to ensure stop is processed
+    setTimeout(() => {
+      // Start new analysis
+      console.log(`🔍 Starting analysis: move ${moveIndex + 1}, depth ${targetDepth}, fen: ${fen.split(' ')[0]}`);
+      stockfish.postMessage(`position fen ${fen}`);
+      stockfish.postMessage(`go depth ${targetDepth}`);
+    }, 50);
     
     if (moveIndex % 10 === 0 || moveIndex === 0) {
       console.log(`🔍 Analyzing position ${moveIndex + 1}: ${fen.split(' ')[0].substring(0, 30)}...`);
