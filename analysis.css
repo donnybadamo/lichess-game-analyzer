@@ -144,7 +144,7 @@ body {
   border-radius: 0.5rem;
   margin: 12px 0;
   width: 100%;
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .player-bar .player-name {
@@ -167,7 +167,7 @@ body {
   justify-content: center;
   flex: 1;
   width: 100%;
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .eval-bar {
@@ -235,8 +235,8 @@ body {
 
 .board-area {
   position: relative;
-  /* Make board larger and more prominent */
-  width: clamp(400px, min(calc(100vh - 280px), calc((100vw - 500px) * 0.7)), 700px);
+  /* Dynamic board sizing like Lichess - scales with available space */
+  width: clamp(450px, min(calc(100vh - 200px), calc((100vw - 400px) * 0.85)), 900px);
   aspect-ratio: 1;
   flex-shrink: 0;
   flex-grow: 0;
@@ -330,7 +330,7 @@ body {
   padding: 16px 0 8px 0;
   margin-top: 12px;
   width: 100%;
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .nav-controls-secondary {
@@ -339,7 +339,7 @@ body {
   gap: 8px;
   padding: 8px 0 16px 0;
   width: 100%;
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .nav-btn {
