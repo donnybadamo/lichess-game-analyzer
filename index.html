@@ -29,10 +29,10 @@
   <!-- Site Header -->
   <header class="site-header">
     <a href="https://donnybadamo.com" target="_blank" class="site-brand">
-      <span class="shamrock">☘️</span>
       <span class="brand-name">donnybadamo.com</span>
+      <span style="margin: 0 8px; color: var(--muted-foreground);">|</span>
+      <span class="page-title" style="font-size: inherit; font-weight: inherit; margin: 0;">Chess Analysis</span>
     </a>
-    <h1 class="page-title">Chess Analysis</h1>
     <div class="header-spacer"></div>
   </header>
 
@@ -67,29 +67,33 @@
       
       <!-- Right: Analysis Panel (Floating) -->
       <div class="analysis-panel">
-      <!-- Upload PGN Button -->
-      <button class="pgn-upload-btn" id="pgnUploadBtn" title="Upload PGN File">
-        <input type="file" id="pgnFileInput" accept=".pgn,.txt" style="display: none;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="17 8 12 3 7 8"></polyline>
-          <line x1="12" y1="3" x2="12" y2="15"></line>
-        </svg>
-      </button>
       <div class="analysis-panel-content">
-      <!-- Current Move Analysis -->
-      <div class="move-analysis" id="moveAnalysis">
+      <!-- Header Section with Title and Upload Button -->
+      <div class="analysis-header" id="analysisHeader">
+        <div class="analysis-move" id="analysisMove">BADAMO BLUNDERS</div>
+        <button class="pgn-upload-btn" id="pgnUploadBtn" title="Paste or Upload PGN">
+          <input type="file" id="pgnFileInput" accept=".pgn,.txt" style="display: none;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Welcome Section (shown when no game loaded) -->
+      <div class="welcome-section" id="welcomeSection">
+        <div class="analysis-text" id="analysisText">Analyze your chess games with Stockfish 16 engine. Get move-by-move commentary, identify blunders and brilliant moves, and review key moments with AI-powered voice narration.</div>
+      </div>
+      
+      <!-- Current Move Analysis (shown when game is loaded) -->
+      <div class="move-analysis" id="moveAnalysis" style="display: none;">
         <div class="analysis-content">
-          <div class="analysis-icon" id="analysisIcon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="20" x2="18" y2="10"></line>
-              <line x1="12" y1="20" x2="12" y2="4"></line>
-              <line x1="6" y1="20" x2="6" y2="14"></line>
-            </svg>
+          <div class="analysis-icon" id="analysisIcon" style="display: none;">
           </div>
           <div class="analysis-details">
-            <div class="analysis-move" id="analysisMove">Chess Game Analyzer</div>
-            <div class="analysis-text" id="analysisText">Analyze your chess games with Stockfish 16 engine. Get move-by-move commentary, identify blunders and brilliant moves, and review key moments with AI-powered voice narration.</div>
+            <div class="analysis-move-inline" id="analysisMoveInline"></div>
+            <div class="analysis-text-inline" id="analysisTextInline"></div>
           </div>
           <div class="analysis-eval" id="analysisEval"></div>
         </div>
@@ -116,9 +120,9 @@
       <!-- Demo Button Section (shown when no game loaded) -->
       <div class="demo-section" id="demoSection">
         <div class="demo-content">
-          <p class="demo-text">Want to see how it works? Try the demo game below to experience move-by-move analysis, key moments, and voice commentary with a real game example.</p>
+          <p class="demo-text">Try the demo game to see analysis in action.</p>
           <button class="btn-demo" id="demoBtn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polygon points="5 3 19 12 5 21 5 3"></polygon>
             </svg>
             <span>Try Demo Game</span>
@@ -181,11 +185,9 @@
         <input type="checkbox" id="voiceToggle" checked style="display: none;">
         <button id="flipBtn" class="nav-btn" title="Flip Board (f)">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-            <polyline points="12 12.01 12 22.08 20.73 17.04"></polyline>
-            <polyline points="3.27 6.96 12 12.01 12 22.08"></polyline>
+            <path d="M12 2v20"></path>
+            <path d="m8 6 4-4 4 4"></path>
+            <path d="m8 18 4 4 4-4"></path>
           </svg>
         </button>
         <div class="nav-separator"></div>
@@ -215,7 +217,7 @@
         <p class="password-subtitle">Enter the secret password to unlock the premium voice feature</p>
       </div>
       <div class="password-modal-body">
-        <input type="password" id="passwordInput" class="password-input" placeholder="Enter password..." autocomplete="off" autofocus>
+        <input type="password" id="passwordInput" class="password-input" placeholder="" autocomplete="off" autofocus>
         <div class="password-hint" id="passwordHint"></div>
       </div>
       <div class="password-modal-footer">
@@ -251,7 +253,6 @@
 1. e4 e5 2. Nf3 Nc6 3. Bb5 ..."></textarea>
       <div class="modal-buttons">
         <button id="analyzePgnBtn" class="btn-analyze">
-          <span style="font-size: 22px;">📋</span>
           <span style="font-size: 13px;">Analyze Game</span>
         </button>
       </div>

@@ -455,6 +455,290 @@ if (document.readyState === 'loading') {
   })();
 }
 
+// Initialize demo game with pre-made commentary (no analysis)
+async function initializeDemoGame(pgn) {
+  try {
+    // Load the game normally but skip analysis
+    await initializeGameWithoutAnalysis(pgn);
+    
+    // Check if example game commentary is available
+    if (!window.EXAMPLE_GAME_COMMENTARY || !window.getMoveByPly) {
+      console.warn('Example game commentary not loaded, falling back to regular analysis');
+      await analyzeGame();
+      return;
+    }
+    
+    // Populate analysis data and commentary from pre-made data
+    analysisData = [];
+    moveCommentary = [];
+    keyMoments = [];
+    
+    // Map quality to annotation format
+    const qualityToAnnotation = {
+      'brilliant': '!!',
+      'great': '!',
+      'best': '!',
+      'good': '',
+      'book': '',
+      'inaccuracy': '?!',
+      'mistake': '?',
+      'blunder': '??',
+      'miss': '??'
+    };
+    
+    // Process each move
+    for (let i = 0; i < moves.length; i++) {
+      // getMoveByPly already returns the white or black move object directly
+      const moveInfo = window.getMoveByPly(i);
+      
+      if (moveInfo) {
+        const isWhite = i % 2 === 0;
+        
+        // Handle eval - check for mate notation (#-1) or numeric
+        let evalCp = 0;
+        let mate = null;
+        if (typeof moveInfo.eval === 'string' && moveInfo.eval.includes('#')) {
+          // Mate position
+          const mateMatch = moveInfo.eval.match(/#(-?\d+)/);
+          if (mateMatch) {
+            mate = parseInt(mateMatch[1]);
+            evalCp = mate > 0 ? 10000 : -10000; // Large eval for mate
+          }
+        } else {
+          // Numeric eval in pawns, convert to centipawns
+          evalCp = (moveInfo.eval || 0) * 100;
+        }
+        
+        // Map quality to annotation
+        const annotation = qualityToAnnotation[moveInfo.quality] || '';
+        
+        // Store bestMoveUci for arrow drawing
+        const bestMoveUci = moveInfo.bestMoveUci || null;
+        
+        analysisData[i] = {
+          cp: evalCp,
+          mate: mate,
+          depth: 20, // Demo data depth
+          bestMove: moveInfo.bestMove || null,
+          bestMoveUci: bestMoveUci, // Store UCI for arrow drawing
+          annotation: annotation,
+          quality: moveInfo.quality, // Store original quality
+          pv: [],
+          moveIndex: i
+        };
+        
+        // Use pre-made commentary
+        moveCommentary[i] = moveInfo.commentary || `${isWhite ? 'White' : 'Black'} plays ${moves[i].san}`;
+        
+        // Check for key moments from move data
+        if (moveInfo.isKeyMoment) {
+          const keyMomentType = moveInfo.keyMomentType || 
+            (moveInfo.quality === 'blunder' ? 'blunder' :
+             moveInfo.quality === 'miss' ? 'missedMate' :
+             moveInfo.quality === 'brilliant' ? 'brilliant' : 'turning-point');
+          
+          keyMoments.push({
+            moveIndex: i,
+            move: moves[i].san,
+            type: keyMomentType,
+            title: moveInfo.keyMomentTitle || '',
+            eval: evalCp,
+            evalDisplay: moveInfo.evalDisplay || moveInfo.eval,
+            bestMove: moveInfo.bestMove,
+            bestMoveUci: bestMoveUci
+          });
+        }
+      }
+    }
+    
+    // Also add key moments from the keyMoments array in the demo script
+    if (window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.keyMoments) {
+      window.EXAMPLE_GAME_COMMENTARY.keyMoments.forEach(km => {
+        // Convert ply to moveIndex (ply is 0-based, moveIndex is also 0-based)
+        const moveIndex = km.ply;
+        if (moveIndex >= 0 && moveIndex < moves.length) {
+          // Check if already added
+          const exists = keyMoments.find(km => km.moveIndex === moveIndex);
+          if (!exists) {
+            keyMoments.push({
+              moveIndex: moveIndex,
+              move: moves[moveIndex]?.san || '',
+              type: km.type,
+              title: km.title || '',
+              eval: typeof km.eval === 'string' ? 0 : (km.eval || 0) * 100,
+              evalDisplay: km.eval,
+              bestMove: km.bestMove,
+              bestMoveUci: km.bestMoveUci
+            });
+          }
+        }
+      });
+    }
+    
+    // Sort key moments by move index
+    keyMoments.sort((a, b) => a.moveIndex - b.moveIndex);
+    
+    // Hide demo section and eval graph, show game sections
+    const demoSection = document.getElementById('demoSection');
+    const evalGraphSection = document.querySelector('.eval-graph-section');
+    if (demoSection) demoSection.style.display = 'none';
+    if (evalGraphSection) evalGraphSection.style.display = 'none';
+    
+    // Display key moments
+    displayKeyMoments();
+    
+    // Refresh moves display
+    displayMoves();
+    
+    // Show game summary if available
+    if (window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.meta) {
+      const meta = window.EXAMPLE_GAME_COMMENTARY.meta;
+      gameSummary = `Game: ${meta.white} (${meta.whiteElo}) vs ${meta.black} (${meta.blackElo})\n${meta.opening}\nResult: ${meta.result}\n${meta.timeControl}`;
+      displayGameSummary();
+    }
+    
+    // Reset to start position
+    currentMoveIndex = -1;
+    resetMoveAnalysisPanel();
+    
+    // Update all move annotations in the moves list
+    for (let i = 0; i < moves.length; i++) {
+      if (analysisData[i]) {
+        updateMoveAnnotation(i, analysisData[i]);
+      }
+    }
+    
+    console.log('Demo game loaded with pre-made commentary');
+  } catch (error) {
+    console.error('Error loading demo game:', error);
+    // Fallback to regular analysis
+    await analyzeGame();
+  }
+}
+
+// Initialize game without running analysis (used by demo)
+async function initializeGameWithoutAnalysis(pgn) {
+  // This is the same as initializeGame but stops before analyzeGame()
+  try {
+    console.log('Initializing game with PGN:', pgn.substring(0, 100) + '...');
+    
+    // Initialize Chess.js
+    console.log('Creating Chess instance...');
+    chess = new window.Chess();
+    
+    // Clean PGN - remove annotations but preserve structure
+    let cleanPgn = pgn.trim();
+    cleanPgn = cleanPgn.replace(/\{[^}]*\}/g, '');
+    cleanPgn = cleanPgn.replace(/\([^)]*\)/g, '');
+    cleanPgn = cleanPgn.replace(/[?!]{1,2}/g, '');
+    cleanPgn = cleanPgn.replace(/(\d+)\.\s+(\S+)\s+\1\.\.\.\s+(\S+)/g, '$1. $2 $3');
+    cleanPgn = cleanPgn.replace(/[ \t]+/g, ' ');
+    cleanPgn = cleanPgn.replace(/\n\n+/g, '\n\n');
+    cleanPgn = cleanPgn.trim();
+    
+    // Parse PGN
+    console.log('Parsing PGN...', cleanPgn.substring(0, 200));
+    try {
+      chess.loadPgn(cleanPgn);
+      const testMoves = chess.history();
+      if (testMoves.length === 0) {
+        throw new Error('PGN parsed but no moves found');
+      }
+      console.log('PGN parsed successfully,', testMoves.length, 'moves found');
+    } catch (parseError) {
+      console.error('PGN parse error:', parseError.message);
+      throw new Error('Could not parse PGN: ' + parseError.message);
+    }
+    
+    // Extract moves
+    moves = chess.history({ verbose: true });
+    console.log('Moves extracted:', moves.length);
+    
+    // Initialize board if needed
+    if (!board) {
+      if (typeof window.Chessboard === 'undefined') {
+        throw new Error('Chessboard library not loaded');
+      }
+      
+      if (typeof window.$ === 'undefined' || typeof window.jQuery === 'undefined' || !window.$.fn) {
+        throw new Error('jQuery not available - Chessboard requires jQuery with $.fn');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const boardElement = document.getElementById('board');
+      if (!boardElement) {
+        throw new Error('Board element #board not found');
+      }
+      
+      const pieceTheme = (piece) => {
+        const pieceMap = {
+          'wK': 'white-king', 'wQ': 'white-queen', 'wR': 'white-rook',
+          'wB': 'white-bishop', 'wN': 'white-knight', 'wP': 'white-pawn',
+          'bK': 'black-king', 'bQ': 'black-queen', 'bR': 'black-rook',
+          'bB': 'black-bishop', 'bN': 'black-knight', 'bP': 'black-pawn'
+        };
+        return `libs/pieces/${pieceMap[piece] || piece}.png`;
+      };
+      
+      board = window.Chessboard('board', {
+        position: 'start',
+        draggable: true,
+        pieceTheme: pieceTheme,
+        orientation: 'white',
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd
+      });
+      
+      if (board) {
+        board.orientation('white');
+        boardOrientation = 'white';
+      }
+      
+      board.position('start');
+    } else {
+      board.position(chess.fen());
+    }
+    
+    // Initialize Stockfish (needed for eval bar, but won't analyze)
+    await initializeStockfish();
+    
+    // Update UI
+    const welcomeSection = document.getElementById('welcomeSection');
+    const moveAnalysis = document.getElementById('moveAnalysis');
+    const analysisMoveInline = document.getElementById('analysisMoveInline');
+    const analysisTextInline = document.getElementById('analysisTextInline');
+    const iconEl = document.getElementById('analysisIcon');
+    const evalGraphSection = document.querySelector('.eval-graph-section');
+    
+    if (welcomeSection) welcomeSection.style.display = 'none';
+    if (moveAnalysis) moveAnalysis.style.display = 'block';
+    if (iconEl) iconEl.style.display = 'flex';
+    // Hide eval graph for demo (no real eval data)
+    if (evalGraphSection) evalGraphSection.style.display = 'none';
+    
+    if (analysisMoveInline) {
+      analysisMoveInline.textContent = 'Loading demo game...';
+    }
+    if (analysisTextInline) {
+      analysisTextInline.textContent = 'Loading pre-made commentary...';
+    }
+    
+    // Hide demo section immediately when game loads
+    const demoSection = document.getElementById('demoSection');
+    if (demoSection) demoSection.style.display = 'none';
+    
+    // Display moves
+    displayMoves();
+    displayGameInfo(cleanPgn);
+    
+  } catch (error) {
+    console.error('Error initializing game:', error);
+    throw error;
+  }
+}
+
 async function initializeGame(pgn) {
   try {
     console.log('Initializing game with PGN:', pgn.substring(0, 100) + '...');
@@ -661,14 +945,29 @@ async function initializeGame(pgn) {
     await initializeStockfish();
     
     // Update analysis panel (but keep it visible)
-    const analysisMove = document.getElementById('analysisMove');
-    const analysisText = document.getElementById('analysisText');
-    if (analysisMove) {
-      analysisMove.textContent = 'Analyzing game...';
+    const welcomeSection = document.getElementById('welcomeSection');
+    const moveAnalysis = document.getElementById('moveAnalysis');
+    const analysisMoveInline = document.getElementById('analysisMoveInline');
+    const analysisTextInline = document.getElementById('analysisTextInline');
+    
+    // Show move analysis section, hide welcome section
+    const iconEl = document.getElementById('analysisIcon');
+    const evalGraphSection = document.querySelector('.eval-graph-section');
+    if (welcomeSection) welcomeSection.style.display = 'none';
+    if (moveAnalysis) moveAnalysis.style.display = 'block';
+    if (iconEl) iconEl.style.display = 'flex';
+    if (evalGraphSection) evalGraphSection.style.display = 'block';
+    
+    if (analysisMoveInline) {
+      analysisMoveInline.textContent = 'Analyzing game...';
     }
-    if (analysisText) {
-      analysisText.textContent = 'Loading move-by-move analysis...';
+    if (analysisTextInline) {
+      analysisTextInline.textContent = 'Loading move-by-move analysis...';
     }
+    
+    // Hide demo section immediately when game loads
+    const demoSection = document.getElementById('demoSection');
+    if (demoSection) demoSection.style.display = 'none';
     
     // Display moves
     displayMoves();
@@ -791,7 +1090,16 @@ function setupEventListeners() {
       // Toggle dropdown on click
       voiceBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const isOpening = !voiceDropdown.classList.contains('open');
         voiceDropdown.classList.toggle('open');
+        
+        // Position dropdown dynamically when opening
+        if (isOpening && voiceDropdownMenu) {
+          const rect = voiceBtn.getBoundingClientRect();
+          voiceDropdownMenu.style.bottom = `${window.innerHeight - rect.top + 8}px`;
+          voiceDropdownMenu.style.left = `${rect.left + rect.width / 2}px`;
+          voiceDropdownMenu.style.transform = 'translateX(-50%)';
+        }
       });
       
       // Close dropdown when clicking outside
@@ -991,17 +1299,25 @@ function setupEventListeners() {
       console.warn('Voice toggle element not found!');
     }
     
-    // PGN Upload button setup
+    // PGN Upload button setup - opens PGN modal (same as Paste PGN button)
     const pgnUploadBtn = document.getElementById('pgnUploadBtn');
     const pgnFileInput = document.getElementById('pgnFileInput');
     
-    if (pgnUploadBtn && pgnFileInput) {
-      // Click upload button to trigger file input
+    if (pgnUploadBtn) {
+      // Click upload button to open PGN modal (same functionality as Paste PGN)
       pgnUploadBtn.addEventListener('click', () => {
-        pgnFileInput.click();
+        const pgnModal = document.getElementById('pgnModal');
+        if (pgnModal) {
+          pgnModal.style.display = 'flex';
+        }
       });
-      
-      // Handle file selection
+    } else {
+      console.warn('PGN upload button not found!');
+    }
+    
+    // Keep file input functionality available (can be used elsewhere if needed)
+    if (pgnFileInput) {
+      // Handle file selection (if file input is triggered elsewhere)
       pgnFileInput.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -1058,16 +1374,14 @@ function setupEventListeners() {
           pgnFileInput.value = '';
         }
       });
-    } else {
-      console.warn('PGN upload button or file input not found!');
     }
     
-    // Demo button handler
+    // Demo button handler - load game with pre-made commentary (no analysis)
     const demoBtn = document.getElementById('demoBtn');
     if (demoBtn) {
       demoBtn.addEventListener('click', async () => {
-        console.log('Loading demo game...');
-        await initializeGame(EXAMPLE_GAME_PGN);
+        console.log('Loading demo game with pre-made commentary...');
+        await initializeDemoGame(EXAMPLE_GAME_PGN);
         // Save demo game to localStorage
         try {
           localStorage.setItem('currentGamePGN', EXAMPLE_GAME_PGN);
@@ -1112,12 +1426,39 @@ function setupEventListeners() {
     
     if (analyzePgnBtn && pgnInput) {
       console.log('Setting up PGN input handlers');
+      
+      // Create error message element
+      let errorMsg = document.getElementById('pgnErrorMsg');
+      if (!errorMsg) {
+        errorMsg = document.createElement('div');
+        errorMsg.id = 'pgnErrorMsg';
+        errorMsg.className = 'pgn-error-message';
+        errorMsg.style.display = 'none';
+        pgnInput.parentNode.insertBefore(errorMsg, pgnInput.nextSibling);
+      }
+      
       analyzePgnBtn.addEventListener('click', async () => {
         const pgn = pgnInput.value.trim();
+        
+        // Validate PGN is not empty
         if (!pgn) {
-          alert('Please paste a PGN before analyzing.');
+          // Show error in UI
+          errorMsg.textContent = 'Please paste a PGN before analyzing.';
+          errorMsg.style.display = 'block';
+          pgnInput.classList.add('error');
+          pgnInput.focus();
+          
+          // Hide error after 5 seconds
+          setTimeout(() => {
+            errorMsg.style.display = 'none';
+            pgnInput.classList.remove('error');
+          }, 5000);
           return;
         }
+        
+        // Hide error if PGN is valid
+        errorMsg.style.display = 'none';
+        pgnInput.classList.remove('error');
         
         // Close modal immediately when analyze is clicked
         if (pgnModal) {
@@ -1135,11 +1476,19 @@ function setupEventListeners() {
           await initializeGame(pgn);
         } catch (error) {
           console.error('Error analyzing PGN:', error);
-          alert('Error analyzing PGN: ' + error.message);
+          showToast('error', 'Error analyzing PGN: ' + error.message);
         }
         
         analyzePgnBtn.disabled = false;
         analyzePgnBtn.textContent = 'Analyze Game';
+      });
+      
+      // Clear error when user starts typing
+      pgnInput.addEventListener('input', () => {
+        if (errorMsg.style.display === 'block') {
+          errorMsg.style.display = 'none';
+          pgnInput.classList.remove('error');
+        }
       });
       
       // Allow Enter+Ctrl/Cmd to submit
@@ -1233,44 +1582,53 @@ function updateAnalysisPanelWithIntro() {
   const keyMomentsSection = document.getElementById('keyMomentsSection');
   const movesSection = document.getElementById('movesSection');
   const demoSection = document.getElementById('demoSection');
+  const welcomeSection = document.getElementById('welcomeSection');
+  const moveAnalysis = document.getElementById('moveAnalysis');
   
-  // Hide game sections, show demo section
+  // Hide game sections, show demo section and welcome section
+  const evalGraphSection = document.querySelector('.eval-graph-section');
   if (keyMomentsSection) keyMomentsSection.style.display = 'none';
   if (movesSection) movesSection.style.display = 'none';
   if (demoSection) demoSection.style.display = 'flex';
+  if (welcomeSection) welcomeSection.style.display = 'flex';
+  if (moveAnalysis) moveAnalysis.style.display = 'none';
+  if (evalGraphSection) evalGraphSection.style.display = 'none';
   
   if (analysisMove) {
-    analysisMove.textContent = 'Chess Game Analyzer';
+    analysisMove.textContent = 'BADAMO BLUNDERS';
   }
   
   if (analysisText) {
     analysisText.innerHTML = `
-      <div style="margin-bottom: 16px;">
-        <strong>Welcome to Chess Game Analyzer!</strong>
+      <div style="margin-bottom: 12px;">
+        <strong style="font-size: 16px;">Welcome to Badamo Blunders!</strong>
       </div>
-      <div style="font-size: 13px; line-height: 1.8; color: var(--muted-foreground);">
-        <p style="margin-bottom: 12px;">Get deep insights into your chess games with AI-powered analysis. This tool helps you understand your games better by identifying key moments, suggesting better moves, and providing detailed commentary.</p>
+      <div style="font-size: 13px; line-height: 1.6; color: var(--muted-foreground);">
+        <p style="margin-bottom: 12px;">Analyze your chess games, identify key moments, get move suggestions, and listen to commentary.</p>
         
-        <p style="margin-bottom: 12px;"><strong>How to use:</strong></p>
-        <ul style="margin-left: 20px; margin-bottom: 16px; padding: 0;">
-          <li><strong>Upload or paste</strong> a PGN file from your games</li>
-          <li><strong>Try the demo</strong> to see how it works</li>
-          <li><strong>Navigate</strong> through moves with the controls below</li>
-          <li><strong>Listen</strong> to voice commentary (click the sound icon)</li>
+        <p style="margin-bottom: 8px; font-size: 14px;"><strong>How to use:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0; font-size: 13px; line-height: 1.8;">
+          <li>Upload or paste a PGN file</li>
+          <li>Try the demo game below</li>
+          <li>Navigate moves with controls</li>
+          <li>Click sound icon for voice</li>
         </ul>
         
-        <p style="margin-bottom: 12px;"><strong>Features:</strong></p>
-        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0;">
-          <li><strong>Stockfish 16</strong> engine analysis</li>
-          <li><strong>Move-by-move</strong> commentary</li>
-          <li><strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
-          <li><strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
-          <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
+        <p style="margin-bottom: 8px; font-size: 14px;"><strong>Features:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0; font-size: 13px; line-height: 1.8;">
+          <li>Stockfish 16 analysis</li>
+          <li>Move-by-move commentary</li>
+          <li>Key moments detection</li>
+          <li>Voice narration</li>
+          <li>Evaluation graph</li>
         </ul>
-        <p style="margin-top: 16px; margin-bottom: 0;">
-          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <span style="font-size: 20px;">📋</span>
-            <span style="font-size: 13px;">Paste PGN to Start Analysis</span>
+        <p style="margin-top: 4px; margin-bottom: 0;">
+          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px 24px; margin-top: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+            </svg>
+            <span style="font-size: 14px;">Paste PGN</span>
           </button>
         </p>
       </div>
@@ -1337,32 +1695,56 @@ function resetGameState() {
   // Restore intro in right panel
   const analysisMove = document.getElementById('analysisMove');
   const analysisText = document.getElementById('analysisText');
+  const welcomeSection = document.getElementById('welcomeSection');
+  const moveAnalysis = document.getElementById('moveAnalysis');
+  const demoSection = document.getElementById('demoSection');
+  
   if (analysisMove) {
-    analysisMove.textContent = 'Chess Game Analyzer';
+    analysisMove.textContent = 'BADAMO BLUNDERS';
   }
   if (analysisText) {
     analysisText.innerHTML = `
-      <div style="margin-bottom: 16px;">
-        <strong>Analyze your chess games with AI-powered insights!</strong>
+      <div style="margin-bottom: 12px;">
+        <strong style="font-size: 16px;">Welcome to Badamo Blunders!</strong>
       </div>
-      <div style="font-size: 13px; line-height: 1.8; color: var(--muted-foreground);">
-        <p style="margin-bottom: 12px;"><strong>Features:</strong></p>
-        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0;">
-          <li><strong>Stockfish 16</strong> engine analysis</li>
-          <li><strong>Move-by-move</strong> commentary</li>
-          <li><strong>Key moments</strong> detection (blunders, mistakes, brilliant moves)</li>
-          <li><strong>Voice narration</strong> with Donny's voice or your browser's voice</li>
-          <li>📊 <strong>Evaluation graph</strong> and visual analysis</li>
+      <div style="font-size: 13px; line-height: 1.6; color: var(--muted-foreground);">
+        <p style="margin-bottom: 12px;">Analyze your chess games, identify key moments, get move suggestions, and listen to commentary.</p>
+        
+        <p style="margin-bottom: 8px; font-size: 14px;"><strong>How to use:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0; font-size: 13px; line-height: 1.8;">
+          <li>Upload or paste a PGN file</li>
+          <li>Try the demo game below</li>
+          <li>Navigate moves with controls</li>
+          <li>Click sound icon for voice</li>
         </ul>
-        <p style="margin-top: 16px; margin-bottom: 0;">
-          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <span style="font-size: 20px;">📋</span>
-            <span style="font-size: 13px;">Paste PGN to Start Analysis</span>
+        
+        <p style="margin-bottom: 8px; font-size: 14px;"><strong>Features:</strong></p>
+        <ul style="margin-left: 20px; margin-bottom: 12px; padding: 0; font-size: 13px; line-height: 1.8;">
+          <li>Stockfish 16 analysis</li>
+          <li>Move-by-move commentary</li>
+          <li>Key moments detection</li>
+          <li>Voice narration</li>
+          <li>Evaluation graph</li>
+        </ul>
+        <p style="margin-top: 4px; margin-bottom: 0;">
+          <button id="startAnalysisBtn" class="btn-analyze" style="width: 100%; padding: 12px 24px; margin-top: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+            </svg>
+            <span style="font-size: 14px;">Paste PGN</span>
           </button>
         </p>
       </div>
     `;
   }
+  
+  // Show welcome section, hide move analysis
+  const evalGraphSection = document.querySelector('.eval-graph-section');
+  if (welcomeSection) welcomeSection.style.display = 'flex';
+  if (moveAnalysis) moveAnalysis.style.display = 'none';
+  if (demoSection) demoSection.style.display = 'flex';
+  if (evalGraphSection) evalGraphSection.style.display = 'none';
   
   // Clear game summary
   const gameSummary = document.getElementById('gameSummary');
@@ -1540,24 +1922,38 @@ function getBestMoveSuggestion(moveIndex) {
   if (typeof window !== 'undefined' && window.EXAMPLE_GAME_COMMENTARY && window.getMoveByPly && isExampleGame()) {
     const moveData = window.getMoveByPly(moveIndex);
     if (moveData && moveData.bestMove && moveData.bestMove !== moves[moveIndex]?.san) {
-      // Check if there's a sizeable eval change or if it's marked as important
-      const prevMoveData = moveIndex > 0 ? window.getMoveByPly(moveIndex - 1) : null;
-      const prevEval = prevMoveData?.eval;
-      const currentEval = moveData.eval;
+      // Show suggestion if there's a best move (quality-based or key moment)
+      const shouldShow = moveData.isKeyMoment || 
+                        moveData.quality === 'blunder' || 
+                        moveData.quality === 'mistake' || 
+                        moveData.quality === 'inaccuracy' ||
+                        moveData.quality === 'miss' ||
+                        moveData.suggestionComment;
       
-      // Handle string evals (like "#-1" for mate)
-      const prevEvalNum = typeof prevEval === 'string' ? 0 : (prevEval || 0);
-      const currentEvalNum = typeof currentEval === 'string' ? 0 : (currentEval || 0);
-      const evalChange = Math.abs(currentEvalNum - prevEvalNum);
-      
-      // Show suggestion if eval change is significant (>0.3) or if it's a marked key moment
-      if (evalChange > 0.3 || moveData.isKeyMoment || moveData.annotation) {
+      if (shouldShow) {
         return {
           bestMove: moveData.bestMove,
           comment: moveData.suggestionComment || '',
-          evalChange: evalChange
+          evalChange: 0 // Not needed for demo
         };
       }
+    }
+  }
+  
+  // Also check analysisData for demo (in case it was populated)
+  if (analysisData[moveIndex] && analysisData[moveIndex].bestMove && 
+      analysisData[moveIndex].bestMove !== moves[moveIndex]?.san) {
+    const analysis = analysisData[moveIndex];
+    const shouldShow = analysis.annotation === '??' || analysis.annotation === '?' || 
+                       analysis.annotation === '?!' ||
+                       (analysis.quality && ['blunder', 'mistake', 'inaccuracy', 'miss'].includes(analysis.quality));
+    
+    if (shouldShow) {
+      return {
+        bestMove: analysis.bestMove,
+        comment: '', // Will be populated from demo data if available
+        evalChange: 0
+      };
     }
   }
   
@@ -1595,9 +1991,18 @@ function displayMoves() {
   if (!movesList) return;
   
   // Show sections when game is loaded, hide demo
+  const evalGraphSection = document.querySelector('.eval-graph-section');
   if (movesSection) movesSection.style.display = 'flex';
   if (keyMomentsSection) keyMomentsSection.style.display = 'flex';
   if (demoSection) demoSection.style.display = 'none';
+  // Hide eval graph for demo games (example game commentary)
+  if (evalGraphSection) {
+    if (window.EXAMPLE_GAME_COMMENTARY && isExampleGame()) {
+      evalGraphSection.style.display = 'none';
+    } else {
+      evalGraphSection.style.display = 'block';
+    }
+  }
   
   movesList.innerHTML = '';
 
@@ -1656,6 +2061,10 @@ function displayMoves() {
       blackCell.addEventListener('click', () => goToMove(i + 1));
       blackCell.addEventListener('mouseenter', () => previewMove(i + 1));
       blackCell.addEventListener('mouseleave', () => clearPreview());
+      // Update annotation/quality display
+      if (analysisData[i + 1]) {
+        updateMoveAnnotation(i + 1, analysisData[i + 1]);
+      }
       movesList.appendChild(blackCell);
     } else {
       // Empty cell for alignment
@@ -2393,23 +2802,30 @@ function updateMoveAnnotation(moveIndex, evaluation) {
   
   const iconEl = moveCell.querySelector('.move-icon');
   
-  if (evaluation.annotation === '!!') {
+  // Check quality first (from demo script), then fall back to annotation
+  const quality = evaluation.quality;
+  const annotation = evaluation.annotation;
+  
+  if (quality === 'brilliant' || (annotation === '!!' && !quality)) {
+    // Brilliant move (!!)
+    moveCell.classList.add('brilliant');
+    if (iconEl) iconEl.textContent = '!!';
+  } else if (quality === 'blunder' || quality === 'miss' || annotation === '??') {
+    // Blunder (??)
     moveCell.classList.add('blunder');
     if (iconEl) iconEl.textContent = '??';
-  } else if (evaluation.annotation === '!') {
-    // Could be mistake or best move
-    const prevEval = moveIndex > 0 ? analysisData[moveIndex - 1] : null;
-    const evalChange = prevEval ? Math.abs((evaluation.cp || 0) - (prevEval.cp || 0)) : 0;
-    if (evalChange > 100) {
-      moveCell.classList.add('mistake');
-      if (iconEl) iconEl.textContent = '?';
-    } else {
-      moveCell.classList.add('best');
-      if (iconEl) iconEl.textContent = '!';
-    }
-  } else if (evaluation.annotation === '?!') {
+  } else if (quality === 'mistake' || annotation === '?') {
+    // Mistake (?)
+    moveCell.classList.add('mistake');
+    if (iconEl) iconEl.textContent = '?';
+  } else if (quality === 'inaccuracy' || annotation === '?!') {
+    // Inaccuracy (?!)
     moveCell.classList.add('inaccuracy');
     if (iconEl) iconEl.textContent = '?!';
+  } else if (quality === 'great' || quality === 'best' || (annotation === '!' && !quality)) {
+    // Great/Best move (!)
+    moveCell.classList.add('best');
+    if (iconEl) iconEl.textContent = '!';
   }
 }
 
@@ -2435,15 +2851,96 @@ function updateMoveCommentary(moveIndex, commentary) {
 function displayGameSummary() {
   console.log('Game summary:', gameSummary);
   
+  // Hide demo section when showing game summary
+  const demoSection = document.getElementById('demoSection');
+  const keyMomentsSection = document.getElementById('keyMomentsSection');
+  const movesSection = document.getElementById('movesSection');
+  
+  if (demoSection) demoSection.style.display = 'none';
+  if (keyMomentsSection) keyMomentsSection.style.display = 'flex';
+  if (movesSection) movesSection.style.display = 'flex';
+  
   // Show summary in the move analysis panel when at start
   if (gameSummary && currentMoveIndex === -1) {
     const analysisMove = document.getElementById('analysisMove');
-    const analysisText = document.getElementById('analysisText');
+    const analysisMoveInline = document.getElementById('analysisMoveInline');
+    const analysisTextInline = document.getElementById('analysisTextInline');
     const analysisIcon = document.getElementById('analysisIcon');
+    const moveAnalysis = document.getElementById('moveAnalysis');
+    const welcomeSection = document.getElementById('welcomeSection');
     
-    if (analysisMove) analysisMove.textContent = 'Game Overview';
-    if (analysisText) analysisText.textContent = gameSummary;
-    if (analysisIcon) analysisIcon.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+    // Hide icon
+    if (analysisIcon) analysisIcon.style.display = 'none';
+    
+    // Hide welcome section, show move analysis
+    if (welcomeSection) welcomeSection.style.display = 'none';
+    if (moveAnalysis) moveAnalysis.style.display = 'block';
+    
+    // Parse and format game summary
+    let formattedSummary = '';
+    let headerText = '';
+    
+    // Check if it's the demo game format or generated summary
+    if (gameSummary.includes('Game:') && gameSummary.includes('vs')) {
+      // Demo game format: "Game: White (Elo) vs Black (Elo)\nOpening\nResult: X-X\nTime Control"
+      const lines = gameSummary.split('\n');
+      const gameLine = lines[0].replace('Game: ', '');
+      const [opening, resultLine, timeControl] = lines.slice(1);
+      
+      // Extract players
+      const match = gameLine.match(/(.+?)\s+\((\d+)\)\s+vs\s+(.+?)\s+\((\d+)\)/);
+      if (match) {
+        const [, white, whiteElo, black, blackElo] = match;
+        headerText = `${white} vs ${black}`;
+        
+        formattedSummary = `
+          <table class="game-info-table">
+            <tr>
+              <td class="game-info-label">White</td>
+              <td class="game-info-value">${white} <span class="elo">${whiteElo}</span></td>
+            </tr>
+            <tr>
+              <td class="game-info-label">Black</td>
+              <td class="game-info-value">${black} <span class="elo">${blackElo}</span></td>
+            </tr>
+            <tr>
+              <td class="game-info-label">Opening</td>
+              <td class="game-info-value">${opening || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="game-info-label">Result</td>
+              <td class="game-info-value">${resultLine?.replace('Result: ', '') || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td class="game-info-label">Time Control</td>
+              <td class="game-info-value">${timeControl || 'N/A'}</td>
+            </tr>
+          </table>
+        `;
+      }
+    } else {
+      // Generated summary format (text description)
+      formattedSummary = `<div class="game-summary-text">${gameSummary}</div>`;
+    }
+    
+    // Update header - keep it as BADAMO BLUNDERS (don't show "Game Overview" twice)
+    if (analysisMove) {
+      analysisMove.textContent = 'BADAMO BLUNDERS';
+    }
+    
+    // Update inline move title - show players if available, otherwise leave empty
+    if (analysisMoveInline) {
+      if (headerText && headerText !== 'Game Summary') {
+        analysisMoveInline.textContent = headerText;
+      } else {
+        analysisMoveInline.textContent = '';
+      }
+    }
+    
+    // Update content with formatted HTML
+    if (analysisTextInline) {
+      analysisTextInline.innerHTML = formattedSummary;
+    }
   }
 }
 
@@ -2543,8 +3040,20 @@ function resetToStart() {
   updateEvaluation(0);
 }
 
+// Helper function to ensure demo section stays hidden when game is loaded
+function ensureDemoSectionHidden() {
+  const demoSection = document.getElementById('demoSection');
+  if (demoSection && moves.length > 0) {
+    demoSection.style.display = 'none';
+    demoSection.classList.add('hidden');
+  }
+}
+
 function goToMove(index) {
   if (index < -1 || index >= moves.length) return;
+  
+  // Ensure demo section stays hidden
+  ensureDemoSectionHidden();
   
   // Clear any preview state
   clearPreview();
@@ -2617,19 +3126,29 @@ function highlightMove(move) {
   // Draw best move arrow if there was a better move
   if (currentMoveIndex >= 0 && analysisData[currentMoveIndex]) {
     const analysis = analysisData[currentMoveIndex];
-    const bestMove = analysis.bestMove;
+    const bestMoveUci = analysis.bestMoveUci || analysis.bestMove; // Prefer UCI format
     const annotation = analysis.annotation;
     
     // Show best move arrow if this wasn't the best move
-    if (bestMove && typeof bestMove === 'string' && bestMove.length >= 4) {
-      // Check if the played move matches the best move
-      const bestFrom = bestMove.substring(0, 2);
-      const bestTo = bestMove.substring(2, 4);
-      
-      // Only draw if different from played move
-      if (bestFrom !== move.from || bestTo !== move.to) {
-        // Draw best move arrow - more prominent for mistakes/blunders
-        drawBestMoveArrow(bestMove, annotation);
+    if (bestMoveUci && typeof bestMoveUci === 'string') {
+      // If it's UCI format (4 chars like "a4b5"), use directly
+      if (bestMoveUci.length >= 4 && /^[a-h][1-8][a-h][1-8]/.test(bestMoveUci)) {
+        const bestFrom = bestMoveUci.substring(0, 2);
+        const bestTo = bestMoveUci.substring(2, 4);
+        
+        // Only draw if different from played move
+        if (bestFrom !== move.from || bestTo !== move.to) {
+          // Draw best move arrow - more prominent for mistakes/blunders
+          drawBestMoveArrow(bestMoveUci, annotation);
+        }
+      } else if (bestMoveUci.length >= 4) {
+        // Try to parse as UCI anyway
+        const bestFrom = bestMoveUci.substring(0, 2);
+        const bestTo = bestMoveUci.substring(2, 4);
+        
+        if (bestFrom !== move.from || bestTo !== move.to) {
+          drawBestMoveArrow(bestMoveUci, annotation);
+        }
       }
     }
   }
@@ -2763,9 +3282,12 @@ function drawBestMoveArrow(bestMoveUCI, annotation) {
   if (!/^[a-h][1-8]$/.test(from) || !/^[a-h][1-8]$/.test(to)) return;
   
   // Determine arrow type based on annotation
+  // Blunders and mistakes get critical (more prominent) arrows
   let arrowType = 'best';
-  if (annotation === '!!' || annotation === '!') {
-    arrowType = 'best-critical'; // More prominent for blunders/mistakes
+  if (annotation === '??' || annotation === '!!') {
+    arrowType = 'best-critical'; // More prominent for blunders
+  } else if (annotation === '?' || annotation === '?!') {
+    arrowType = 'best'; // Regular arrow for mistakes/inaccuracies
   }
   
   drawMoveArrow(from, to, arrowType);
@@ -2816,12 +3338,24 @@ function updateMoveAnalysisPanel(moveIndex) {
   const analysis = analysisData[moveIndex];
   const commentary = moveCommentary[moveIndex];
   
+  // Ensure demo section stays hidden
+  ensureDemoSectionHidden();
+  
   const iconEl = document.getElementById('analysisIcon');
-  const moveEl = document.getElementById('analysisMove');
-  const textEl = document.getElementById('analysisText');
+  const moveEl = document.getElementById('analysisMoveInline');
+  const textEl = document.getElementById('analysisTextInline');
   const evalEl = document.getElementById('analysisEval');
   const hintEl = document.getElementById('bestMoveHint');
   const hintMoveEl = document.getElementById('hintMove');
+  const welcomeSection = document.getElementById('welcomeSection');
+  const moveAnalysis = document.getElementById('moveAnalysis');
+  
+  // Show move analysis section, hide welcome section
+  if (welcomeSection) welcomeSection.style.display = 'none';
+  if (moveAnalysis) moveAnalysis.style.display = 'block';
+  
+  // Show the icon when displaying move analysis
+  if (iconEl) iconEl.style.display = 'flex';
   
   if (!iconEl || !moveEl || !textEl) return;
   
@@ -2833,13 +3367,27 @@ function updateMoveAnalysisPanel(moveIndex) {
   const chartIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>';
   const checkIcon = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
   
+  // Set icon based on annotation/quality
   if (analysis) {
-    if (analysis.annotation === '!!') {
+    // Check quality first (from demo script), then fall back to annotation
+    const quality = analysis.quality;
+    const annotation = analysis.annotation;
+    
+    if (quality === 'brilliant' || annotation === '!!') {
+      // Brilliant move (!!)
       iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>';
-    } else if (analysis.annotation === '!') {
+    } else if (quality === 'blunder' || quality === 'miss' || annotation === '??') {
+      // Blunder (??)
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+    } else if (quality === 'mistake' || annotation === '?') {
+      // Mistake (?)
       iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
-    } else if (analysis.annotation === '?!') {
+    } else if (quality === 'inaccuracy' || annotation === '?!') {
+      // Inaccuracy (?!)
       iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
+    } else if (quality === 'great' || annotation === '!') {
+      // Great move (!)
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>';
     } else {
       iconEl.innerHTML = checkIcon;
     }
@@ -2850,45 +3398,100 @@ function updateMoveAnalysisPanel(moveIndex) {
   // Move notation
   moveEl.textContent = `${moveNum}. ${isWhite ? '' : '...'}${move.san}`;
   
-  // Commentary text
-  textEl.textContent = commentary || `${player} plays ${move.san}`;
+  // Commentary text - use demo commentary if available, otherwise generated
+  let commentaryText = commentary;
+  if (isExampleGame() && window.getMoveByPly) {
+    const moveData = window.getMoveByPly(moveIndex);
+    if (moveData && moveData.commentary) {
+      commentaryText = moveData.commentary;
+    }
+  }
+  textEl.textContent = commentaryText || `${player} plays ${move.san}`;
   
   // Evaluation - update both the panel and the side bar
-  if (analysis && analysis.cp !== undefined) {
-    const cp = analysis.cp; // Keep in centipawns for updateEvaluation
-    const displayCp = cp / 100; // Convert to pawns for display
-    evalEl.textContent = displayCp > 0 ? `+${displayCp.toFixed(1)}` : displayCp.toFixed(1);
-    evalEl.className = 'analysis-eval' + (displayCp > 1 ? ' winning' : displayCp < -1 ? ' losing' : '');
-    evalEl.style.display = 'block';
-    
-    // Also update the evaluation bar on the side
-    updateEvaluation(cp, true);
+  if (analysis) {
+    // Handle mate positions
+    if (analysis.mate !== null && analysis.mate !== undefined) {
+      evalEl.textContent = `#${Math.abs(analysis.mate)}`;
+      evalEl.className = 'analysis-eval' + (analysis.mate > 0 ? ' winning' : ' losing');
+      evalEl.style.display = 'block';
+      // For mate, use extreme eval for bar
+      updateEvaluation(analysis.mate > 0 ? 10000 : -10000, true);
+    } else if (analysis.cp !== undefined) {
+      const cp = analysis.cp; // Keep in centipawns for updateEvaluation
+      const displayCp = cp / 100; // Convert to pawns for display
+      evalEl.textContent = displayCp > 0 ? `+${displayCp.toFixed(1)}` : displayCp.toFixed(1);
+      evalEl.className = 'analysis-eval' + (displayCp > 1 ? ' winning' : displayCp < -1 ? ' losing' : '');
+      evalEl.style.display = 'block';
+      
+      // Also update the evaluation bar on the side
+      updateEvaluation(cp, true);
+    } else {
+      evalEl.style.display = 'none';
+      updateEvaluation(0, false);
+    }
   } else {
     evalEl.style.display = 'none';
     // Reset eval bar if no analysis
     updateEvaluation(0, false);
   }
   
-  // Best move hint
-  if (analysis && analysis.bestMove && analysis.bestMove !== move.san && 
-      (analysis.annotation === '!!' || analysis.annotation === '!' || analysis.annotation === '?!')) {
-    hintMoveEl.textContent = analysis.bestMove;
-    hintEl.style.display = 'flex';
+  // Best move hint - show for any move with a best move suggestion
+  if (analysis && analysis.bestMove && analysis.bestMove !== move.san) {
+    // Show hint for blunders, mistakes, inaccuracies, or if quality indicates it
+    const shouldShow = analysis.annotation === '??' || analysis.annotation === '?' || 
+                       analysis.annotation === '?!' || analysis.annotation === '!!' ||
+                       analysis.annotation === '!' ||
+                       (analysis.quality && ['blunder', 'mistake', 'inaccuracy', 'miss'].includes(analysis.quality));
+    
+    if (shouldShow) {
+      hintMoveEl.textContent = analysis.bestMove;
+      hintEl.style.display = 'flex';
+    } else {
+      hintEl.style.display = 'none';
+    }
   } else {
     hintEl.style.display = 'none';
   }
 }
 
 function resetMoveAnalysisPanel() {
+  // Ensure demo section stays hidden
+  ensureDemoSectionHidden();
+  
   const iconEl = document.getElementById('analysisIcon');
-  const moveEl = document.getElementById('analysisMove');
-  const textEl = document.getElementById('analysisText');
+  const moveEl = document.getElementById('analysisMoveInline');
+  const textEl = document.getElementById('analysisTextInline');
   const evalEl = document.getElementById('analysisEval');
   const hintEl = document.getElementById('bestMoveHint');
+  const demoSection = document.getElementById('demoSection');
+  const welcomeSection = document.getElementById('welcomeSection');
+  const moveAnalysis = document.getElementById('moveAnalysis');
   
-  if (iconEl) iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>';
-  if (moveEl) moveEl.textContent = 'Ready to analyze';
-  if (textEl) textEl.textContent = 'Click Play or use arrows to step through the game';
+  // Show game summary if at start and game is loaded
+  if (currentMoveIndex === -1 && gameSummary && moves.length > 0) {
+    // Show move analysis section, hide welcome section
+    if (welcomeSection) welcomeSection.style.display = 'none';
+    if (moveAnalysis) moveAnalysis.style.display = 'block';
+    if (iconEl) {
+      iconEl.style.display = 'flex';
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>';
+    }
+    if (moveEl) moveEl.textContent = 'Game Overview';
+    if (textEl) textEl.textContent = gameSummary;
+  } else if (moves.length === 0) {
+    // Only show "Ready to analyze" if no game is loaded
+    // Show welcome section, hide move analysis
+    if (welcomeSection) welcomeSection.style.display = 'flex';
+    if (moveAnalysis) moveAnalysis.style.display = 'none';
+    if (iconEl) {
+      iconEl.style.display = 'none';
+      iconEl.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>';
+    }
+    if (moveEl) moveEl.textContent = 'Ready to analyze';
+    if (textEl) textEl.textContent = 'Click Play or use arrows to step through the game';
+  }
+  
   if (evalEl) evalEl.style.display = 'none';
   if (hintEl) hintEl.style.display = 'none';
 }
@@ -2946,29 +3549,46 @@ function playMoves() {
     speakGameIntro();
   }
   
+  // Play first move if at start (before setting up interval)
+  if (currentMoveIndex === -1) {
+    // Delay first move to let intro finish
+    setTimeout(() => {
+      if (isPlaying && currentMoveIndex < moves.length - 1) {
+        goToMove(0);
+      }
+    }, gameSummary ? 3000 : 500);
+  }
+  
+  // Set up interval to play moves automatically
   playInterval = setInterval(() => {
+    if (!isPlaying) {
+      clearInterval(playInterval);
+      playInterval = null;
+      return;
+    }
+    
     if (currentMoveIndex < moves.length - 1) {
-      nextMove();
+      goToMove(currentMoveIndex + 1);
     } else {
       stopMoves();
     }
   }, 2000);
-  
-  // Play first move if at start
-  if (currentMoveIndex === -1) {
-    // Delay first move to let intro finish
-    setTimeout(() => {
-      if (isPlaying) nextMove();
-    }, gameSummary ? 3000 : 0);
-  }
 }
 
 async function speakGameIntro() {
-  if (!gameSummary || !voiceEnabled) return;
+  if (!voiceEnabled) return;
   
-  // Create a friendly game intro
-  let intro = "Let's review this game! ";
-  intro += gameSummary;
+  // Use demo intro if available
+  let intro = '';
+  if (isExampleGame() && window.EXAMPLE_GAME_COMMENTARY && window.EXAMPLE_GAME_COMMENTARY.intro) {
+    intro = window.EXAMPLE_GAME_COMMENTARY.intro;
+  } else if (gameSummary) {
+    // Create a friendly game intro
+    intro = "Let's review this game! ";
+    intro += gameSummary;
+  } else {
+    return; // No intro available
+  }
   
   // Use Donny Voice if selected and unlocked
   if (selectedVoiceType === 'donny' && premiumVoiceUnlocked && typeof window.speakWithElevenLabs === 'function') {
@@ -3046,7 +3666,10 @@ function previousMove() {
 }
 
 function nextMove() {
-  pauseMoves();
+  // Only pause if we're auto-playing (manual next should pause auto-play)
+  if (isPlaying) {
+    pauseMoves();
+  }
   if (currentMoveIndex < moves.length - 1) {
     goToMove(currentMoveIndex + 1);
   }
@@ -3060,13 +3683,28 @@ async function speakMoveWithAnalysis(moveIndex) {
   // Build concise, natural commentary - NO move notation
   let text = '';
   
-  // Only speak the commentary, make it conversational
-  if (moveCommentary[moveIndex]) {
-    let commentary = moveCommentary[moveIndex];
-    
+  // For demo games, try to get commentary directly from the demo script first
+  if (window.EXAMPLE_GAME_COMMENTARY && window.getMoveByPly) {
+    const moveData = window.getMoveByPly(moveIndex);
+    if (moveData) {
+      const isWhite = moveIndex % 2 === 0;
+      const moveInfo = isWhite ? moveData.white : moveData.black;
+      if (moveInfo && moveInfo.commentary) {
+        text = moveInfo.commentary;
+      }
+    }
+  }
+  
+  // Fallback to moveCommentary array if demo commentary not found
+  if (!text && moveCommentary[moveIndex]) {
+    text = moveCommentary[moveIndex];
+  }
+  
+  // Clean up the commentary text
+  if (text) {
     // Make it more conversational and concise
     // Remove formal language, make it sound like a coach talking
-    commentary = commentary
+    text = text
       .replace(/White plays|Black plays/g, '')
       .replace(/This is a/g, 'That\'s a')
       .replace(/This was/g, 'That was')
@@ -3074,19 +3712,17 @@ async function speakMoveWithAnalysis(moveIndex) {
       .trim();
     
     // Limit to first 150 chars for brevity
-    if (commentary.length > 150) {
+    if (text.length > 150) {
       // Try to cut at a sentence boundary
-      const sentences = commentary.substring(0, 150).split('.');
+      const sentences = text.substring(0, 150).split('.');
       if (sentences.length > 1) {
-        commentary = sentences.slice(0, -1).join('.') + '.';
+        text = sentences.slice(0, -1).join('.') + '.';
       } else {
-        commentary = commentary.substring(0, 150) + '...';
+        text = text.substring(0, 150) + '...';
       }
     }
-    
-    text = commentary;
   } else {
-    // Fallback: very brief move description
+    // Final fallback: very brief move description (shouldn't happen for demo game)
     const piece = move.piece === 'p' ? 'pawn' : 
                   move.piece === 'n' ? 'knight' :
                   move.piece === 'b' ? 'bishop' :
