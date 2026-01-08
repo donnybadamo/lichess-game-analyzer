@@ -121,6 +121,11 @@ function onDragStart(source, piece, position, orientation) {
 }
 
 function onDrop(source, target) {
+  // Ensure chess instance exists
+  if (!chess) {
+    chess = new window.Chess();
+  }
+  
   // Check if this is a legal move
   const move = chess.move({
     from: source,
@@ -131,8 +136,9 @@ function onDrop(source, target) {
   // Illegal move
   if (move === null) return 'snapback';
   
-  // Mark that we're exploring a line
-  if (!isExploringLine) {
+  // Mark that we're exploring a line (only if we have a game loaded)
+  const hasGame = moves && moves.length > 0;
+  if (hasGame && !isExploringLine) {
     isExploringLine = true;
     showExplorationIndicator();
   }
@@ -186,16 +192,44 @@ function returnToGame() {
 async function updateExplorationAnalysis() {
   if (!stockfish) {
     console.warn('⚠️ Stockfish not available for exploration analysis');
-    const analysisText = document.getElementById('analysisText');
-    if (analysisText) {
-      analysisText.textContent = 'Stockfish not available for analysis';
+    // Don't show error text on opening page - just silently fail
+    const hasGame = moves && moves.length > 0;
+    if (hasGame) {
+      const analysisText = document.getElementById('analysisText');
+      if (analysisText) {
+        analysisText.textContent = 'Stockfish not available for analysis';
+      }
     }
     return;
   }
   
-  const fen = chess.fen();
+  if (!chess) {
+    return; // Can't analyze without chess instance
+  }
   
-  // Quick analysis of the explored position (use quickEval for faster interactive feedback)
+  const fen = chess.fen();
+  const hasGame = moves && moves.length > 0;
+  
+  // On opening page (no game), only update eval bar - no text, no arrows
+  if (!hasGame) {
+    try {
+      // Use quickEval=true for faster analysis during exploration
+      const evalResult = await getPositionEvaluation(fen, -1, true);
+      
+      if (evalResult) {
+        const cp = evalResult.cp || 0;
+        const mate = evalResult.mate;
+        
+        // Only update eval bar - no text, no arrows
+        updateEvaluation(cp, true, mate);
+      }
+    } catch (error) {
+      console.error('Error analyzing position on opening page:', error);
+    }
+    return;
+  }
+  
+  // If we have a game loaded, show full analysis with text (existing behavior)
   const analysisText = document.getElementById('analysisText');
   if (analysisText) {
     analysisText.textContent = 'Analyzing position...';
@@ -274,33 +308,9 @@ async function updateExplorationAnalysis() {
       }
     }
     
-    // Draw best move arrow if we have a best move
+    // Don't draw arrows during exploration - just show eval
+    // Arrows are only shown for actual game moves
     clearMoveHighlights();
-    if (evalResult.bestMove) {
-      // Convert best move to from/to format for arrow drawing
-      if (evalResult.bestMove.length >= 4) {
-        const from = evalResult.bestMove.substring(0, 2);
-        const to = evalResult.bestMove.substring(2, 4);
-        
-        // Validate squares
-        if (/^[a-h][1-8]$/.test(from) && /^[a-h][1-8]$/.test(to)) {
-          drawMoveArrow(from, to, 'best');
-        } else {
-          // Try to get from PV if available
-          if (evalResult.pv && evalResult.pv.length > 0) {
-            // First move in PV might be in UCI format
-            const firstPv = evalResult.pv[0];
-            if (firstPv && firstPv.length >= 4) {
-              const pvFrom = firstPv.substring(0, 2);
-              const pvTo = firstPv.substring(2, 4);
-              if (/^[a-h][1-8]$/.test(pvFrom) && /^[a-h][1-8]$/.test(pvTo)) {
-                drawMoveArrow(pvFrom, pvTo, 'best');
-              }
-            }
-          }
-        }
-      }
-    }
     
     console.log('✅ Exploration analysis complete:', {
       cp,
@@ -479,6 +489,12 @@ async function initializeAnalysisPage() {
     // Show welcome page - user can choose to load demo or paste PGN
     console.log('No PGN in URL - showing welcome page');
     // Welcome page is already shown by updateAnalysisPanelWithIntro() above
+    
+    // Initialize chess instance for exploration even without a game
+    if (!chess) {
+      chess = new window.Chess();
+      console.log('Initialized chess instance for board exploration');
+    }
   }
 }
 
