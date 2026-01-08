@@ -48,16 +48,31 @@ async function loadElevenLabsCredentials() {
     
     if (!apiKey) {
       console.warn('⚠️ No API key found in Cloudflare Worker');
-      console.log('💡 Secrets will not be loaded. Voice will use browser TTS unless credentials are in localStorage.');
+      console.log('💡 Configure secrets in Cloudflare Worker using: wrangler secret put ELEVENLABS_API_KEY');
+      console.log('💡 Voice will use browser TTS until credentials are configured.');
       return null;
     }
-    
+
     // Store in localStorage for the web app to use
+    const loadedSecrets = [];
     localStorage.setItem('elevenlabsApiKey', apiKey);
-    if (agentId) localStorage.setItem('elevenlabsAgentId', agentId);
-    if (voiceId) localStorage.setItem('elevenlabsVoiceId', voiceId);
-    
-    console.log('✅ Loaded ElevenLabs credentials from Cloudflare Worker');
+    loadedSecrets.push('API_KEY');
+
+    if (agentId) {
+      localStorage.setItem('elevenlabsAgentId', agentId);
+      loadedSecrets.push('AGENT_ID');
+    }
+    if (voiceId) {
+      localStorage.setItem('elevenlabsVoiceId', voiceId);
+      loadedSecrets.push('VOICE_ID');
+    }
+
+    console.log('✅ Loaded ElevenLabs credentials:', loadedSecrets.join(', '));
+    if (!agentId || !voiceId) {
+      console.warn('⚠️ Missing some credentials:',
+        [!agentId && 'AGENT_ID', !voiceId && 'VOICE_ID'].filter(Boolean).join(', '));
+      console.log('💡 Configure missing secrets using: wrangler secret put <SECRET_NAME>');
+    }
     
     return { apiKey, agentId, voiceId };
     
