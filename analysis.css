@@ -148,7 +148,7 @@ body {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-  margin: 6px 0;
+  margin: 4px 0;
 }
 
 .player-bar .player-name {
@@ -328,8 +328,15 @@ body {
   display: flex;
   justify-content: center;
   gap: 8px;
-  padding: 12px 0;
+  padding: 12px 0 6px 0;
   margin-top: 6px;
+}
+
+.nav-controls-secondary {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 0 12px 0;
 }
 
 .nav-btn {
@@ -382,13 +389,29 @@ body {
   display: none;
 }
 
-.voice-toggle span {
-  opacity: 0.5;
+.voice-toggle .voice-icon {
+  position: relative;
+  display: inline-block;
   transition: opacity 0.2s;
 }
 
-.voice-toggle input:checked + span {
+.voice-toggle input:checked + .voice-icon {
   opacity: 1;
+}
+
+.voice-toggle input:not(:checked) + .voice-icon {
+  opacity: 0.5;
+}
+
+.voice-toggle input:not(:checked) + .voice-icon::after {
+  content: '🚫';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.9em;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* Analysis Panel - Right Side */
