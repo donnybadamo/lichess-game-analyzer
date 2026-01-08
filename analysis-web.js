@@ -2138,13 +2138,7 @@ async function speakGameIntro() {
     if (success) return;
   }
   
-  // Fallback to Google TTS (with password check)
-  if (useGoogleTTS) {
-    const success = await usePremiumVoiceIfUnlocked(() => speakWithGoogleTTS(intro));
-    if (success) return;
-  }
-  
-  // Final fallback to browser TTS (no password needed)
+  // Fallback to browser TTS (no password needed)
   if (synth && selectedVoice) {
     synth.cancel();
     const utterance = new SpeechSynthesisUtterance(intro);
@@ -2268,16 +2262,7 @@ async function speakMoveWithAnalysis(moveIndex) {
     }
   }
   
-  // Fallback to Google TTS (with password check)
-  if (useGoogleTTS) {
-    const success = await usePremiumVoiceIfUnlocked(() => speakWithGoogleTTS(text));
-    if (success) {
-      console.log('Spoke with Google TTS (masculine voice)');
-      return;
-    }
-  }
-  
-  // Final fallback to Web Speech API
+  // Fallback to Web Speech API (browser TTS)
   // Cancel any ongoing speech
   synth.cancel();
   
